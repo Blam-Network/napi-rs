@@ -837,7 +837,7 @@ fn napi_fn_from_decl(
         }
       }
 
-      ident.to_string().to_case(Case::Camel)
+      ident.to_string()
     } else {
       opts.js_name().map_or_else(
         || ident.to_string(),
@@ -1261,10 +1261,11 @@ impl ConvertToAST for syn::ItemStruct {
     let struct_name = self.ident.clone();
     let js_name = opts.js_name().map_or_else(
       || self.ident.to_string(),
-      |(js_name, _)| js_name.to_owned(),
+      |(js_name, _)| js_name.to_owned()
+    );
     let rust_struct_ident: Ident = self.ident.clone();
     let final_js_name_for_struct = opts.js_name().map_or_else(
-      || self.ident.to_string().to_case(Case::Pascal),
+      || self.ident.to_string(),
       |(attr_js_name, _span)| attr_js_name.to_owned(),
     );
 
@@ -1421,7 +1422,7 @@ impl ConvertToAST for syn::ItemImpl {
     let mut struct_js_name =
       match check_recorded_struct_for_impl(&struct_name, &BindgenAttrs::default()) {
         Ok(recorded_js_name) => recorded_js_name,
-        Err(_) => struct_name.to_string().to_case(Case::UpperCamel),
+        Err(_) => struct_name.to_string(),
       };
     let mut items = vec![];
     let mut task_output_type = None;
@@ -1599,11 +1600,7 @@ impl ConvertToAST for syn::ItemEnum {
             }
 
             let val = find_enum_value_and_remove_attribute(v)?.unwrap_or_else(|| {
-              let mut val = v.ident.to_string();
-              if let Some(case) = case {
-                val = val.to_case(case)
-              }
-              val
+              v.ident.to_string()
             });
 
             Ok(NapiEnumVariant {
