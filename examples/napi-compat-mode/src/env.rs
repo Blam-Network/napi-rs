@@ -1,6 +1,6 @@
 use napi::{
-  bindgen_prelude::Function, CallContext, ContextlessResult, Env, JsBoolean, JsObject,
-  JsObjectValue, JsString, JsValue, Result, Unknown,
+  bindgen_prelude::{Function, JsObjectValue},
+  CallContext, ContextlessResult, Env, JsBoolean, JsObject, JsString, JsValue, Result, Unknown,
 };
 
 #[js_function(2)]
@@ -32,7 +32,7 @@ pub fn strict_equals(ctx: CallContext) -> Result<JsBoolean> {
 #[js_function(1)]
 pub fn cast_unknown(ctx: CallContext) -> Result<JsObject> {
   let arg: Unknown = ctx.get(0)?;
-  Ok(unsafe { arg.cast::<JsObject>() })
+  Ok(unsafe { arg.cast::<JsObject>()? })
 }
 
 #[contextless_function]

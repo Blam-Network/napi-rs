@@ -13,7 +13,7 @@ pub fn accept_stream(
   let mut input = StreamReader::new(web_readable_stream.map(|chunk| {
     chunk
       .map(|chunk| bytes::Bytes::copy_from_slice(&chunk))
-      .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.reason))
+      .map_err(|e| std::io::Error::other(e.reason.clone()))
   }));
   AsyncBlockBuilder::build_with_map(
     env,
@@ -39,7 +39,7 @@ pub fn accept_stream(
 }
 
 #[napi]
-pub fn create_readable_stream(env: &Env) -> Result<ReadableStream<BufferSlice>> {
+pub fn create_readable_stream(env: &Env) -> Result<ReadableStream<'_, BufferSlice<'_>>> {
   let (tx, rx) = tokio::sync::mpsc::channel(100);
   std::thread::spawn(move || {
     for _ in 0..100 {

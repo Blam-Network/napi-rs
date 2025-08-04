@@ -3,7 +3,7 @@ use std::{sync::Arc, thread, time::Duration};
 use napi::{
   bindgen_prelude::*,
   threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode, UnknownReturnValue},
-  Ref,
+  UnknownRef,
 };
 
 use crate::class::Animal;
@@ -50,9 +50,57 @@ pub fn threadsafe_function_throw_error(
   Ok(())
 }
 
+pub struct ErrorStatus(String);
+impl AsRef<str> for ErrorStatus {
+  fn as_ref(&self) -> &str {
+    &self.0
+  }
+}
+
+impl From<Status> for ErrorStatus {
+  fn from(value: Status) -> Self {
+    ErrorStatus(value.to_string())
+  }
+}
+
+#[napi]
+pub fn threadsafe_function_throw_error_with_status(
+  cb: ThreadsafeFunction<bool, UnknownReturnValue, bool, ErrorStatus>,
+) -> Result<()> {
+  thread::spawn(move || {
+    cb.call(
+      Err(Error::new(
+        ErrorStatus("CustomErrorStatus".to_string()),
+        "ThrowFromNative".to_owned(),
+      )),
+      ThreadsafeFunctionCallMode::Blocking,
+    );
+  });
+  Ok(())
+}
+
+#[napi]
+pub fn threadsafe_function_build_throw_error_with_status(cb: Function<'static>) -> Result<()> {
+  let tsfn = cb
+    .build_threadsafe_function()
+    .error_status::<ErrorStatus>()
+    .callee_handled::<true>()
+    .build()?;
+  thread::spawn(move || {
+    tsfn.call(
+      Err(Error::new(
+        ErrorStatus("CustomErrorStatus".to_string()),
+        "ThrowFromNative".to_owned(),
+      )),
+      ThreadsafeFunctionCallMode::Blocking,
+    );
+  });
+  Ok(())
+}
+
 #[napi]
 pub fn threadsafe_function_fatal_mode(
-  cb: ThreadsafeFunction<bool, UnknownReturnValue, bool, false>,
+  cb: ThreadsafeFunction<bool, UnknownReturnValue, bool, Status, false>,
 ) -> Result<()> {
   thread::spawn(move || {
     cb.call(true, ThreadsafeFunctionCallMode::Blocking);
@@ -62,7 +110,7 @@ pub fn threadsafe_function_fatal_mode(
 
 #[napi]
 pub fn threadsafe_function_fatal_mode_error(
-  cb: ThreadsafeFunction<bool, String, bool, false>,
+  cb: ThreadsafeFunction<bool, String, bool, Status, false>,
 ) -> Result<()> {
   thread::spawn(move || {
     cb.call_with_return_value(true, ThreadsafeFunctionCallMode::Blocking, |ret, _| {
@@ -130,7 +178,7 @@ pub fn accept_threadsafe_function(func: ThreadsafeFunction<u32>) {
 }
 
 #[napi]
-pub fn accept_threadsafe_function_fatal(func: ThreadsafeFunction<u32, (), u32, false>) {
+pub fn accept_threadsafe_function_fatal(func: ThreadsafeFunction<u32, (), u32, Status, false>) {
   thread::spawn(move || {
     func.call(1, ThreadsafeFunctionCallMode::NonBlocking);
   });
@@ -174,20 +222,21 @@ pub async fn tsfn_return_promise_timeout(
 #[napi]
 pub fn call_async_with_unknown_return_value<'env>(
   env: &'env Env,
-  tsfn: ThreadsafeFunction<u32, Ref<Unknown>>,
+  tsfn: ThreadsafeFunction<u32, UnknownRef>,
 ) -> Result<PromiseRaw<'env, u32>> {
   env.spawn_future_with_callback(
     async move {
       let return_value = tsfn.call_async(Ok(42)).await?;
       Ok(return_value)
     },
-    |env, mut value| {
-      let return_value = value.get_value(&env)?;
-      value.unref(&env)?;
-      match return_value.get_type()? {
+    |env, value| {
+      let return_value = value.get_value(env)?;
+      let return_value = match return_value.get_type()? {
         ValueType::Object => Ok(110),
         _ => Ok(100),
-      }
+      };
+      value.unref(env)?;
+      return_value
     },
   )
 }
@@ -195,6 +244,20 @@ pub fn call_async_with_unknown_return_value<'env>(
 #[napi]
 pub async fn tsfn_throw_from_js(tsfn: ThreadsafeFunction<u32, Promise<u32>>) -> napi::Result<u32> {
   tsfn.call_async(Ok(42)).await?.await
+}
+
+#[napi]
+pub async fn tsfn_throw_from_js_callback_contains_tsfn(
+  tsfn: ThreadsafeFunction<u32, Promise<u32>>,
+) {
+  std::thread::spawn(move || {
+    if let Err(e) = napi::bindgen_prelude::block_on(async move {
+      tsfn.call_async(Ok(42)).await?.await?;
+      Ok::<(), Error>(())
+    }) {
+      println!("Error in tsfn spawned thread: {}", e);
+    }
+  });
 }
 
 #[napi]
@@ -220,4 +283,11 @@ pub fn tsfn_in_either(pet: Pet) {
       tsfn.call(Ok(42), ThreadsafeFunctionCallMode::NonBlocking);
     });
   }
+}
+
+#[napi]
+pub async fn tsfn_weak(
+  tsfn: ThreadsafeFunction<(), (), (), Status, false, true>,
+) -> napi::Result<()> {
+  tsfn.call_async(()).await
 }

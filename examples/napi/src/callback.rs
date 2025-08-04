@@ -48,7 +48,7 @@ fn read_file_content() -> Result<String> {
   ts_return_type = "T | Promise<T>"
 )]
 fn callback_return_promise<'env>(
-  env: &Env,
+  env: &'env Env,
   fn_in: Function<(), Unknown<'env>>,
   fn_out: Function<String, ()>,
 ) -> Result<Unknown<'env>> {
@@ -60,15 +60,12 @@ fn callback_return_promise<'env>(
       .callee_handled::<true>()
       .build()?;
     env
-      .execute_tokio_future(
-        async move {
-          let s = p.await;
-          fn_out_tsfn.call(s, ThreadsafeFunctionCallMode::NonBlocking);
-          Ok::<(), Error>(())
-        },
-        |_env, undefined| Ok(undefined),
-      )
-      .map(|v| v.into_unknown())
+      .spawn_future(async move {
+        let s = p.await;
+        fn_out_tsfn.call(s, ThreadsafeFunctionCallMode::NonBlocking);
+        Ok::<(), Error>(())
+      })
+      .map(|v| v.to_unknown())
   } else {
     Ok(ret)
   }
@@ -78,7 +75,7 @@ fn callback_return_promise<'env>(
 pub fn callback_return_promise_and_spawn<F: Fn(String) -> Result<Promise<String>>>(
   env: &Env,
   js_func: F,
-) -> napi::Result<PromiseRaw<String>> {
+) -> napi::Result<PromiseRaw<'_, String>> {
   let promise = js_func("Hello".to_owned())?;
   env.spawn_future(async move {
     let resolved = promise.await?;

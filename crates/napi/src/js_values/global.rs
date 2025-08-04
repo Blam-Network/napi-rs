@@ -6,6 +6,19 @@ pub struct JsGlobal<'env>(
   pub(crate) std::marker::PhantomData<&'env ()>,
 );
 
+impl FromNapiValue for JsGlobal<'_> {
+  unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> Result<Self> {
+    Ok(JsGlobal(
+      Value {
+        env,
+        value: napi_val,
+        value_type: ValueType::Object,
+      },
+      std::marker::PhantomData,
+    ))
+  }
+}
+
 impl<'env> JsValue<'env> for JsGlobal<'env> {
   fn value(&self) -> Value {
     self.0
@@ -66,7 +79,7 @@ impl FromNapiValue for JSON<'_> {
 }
 
 impl JSON<'_> {
-  pub fn stringify<V: NapiRaw>(&self, value: V) -> Result<std::string::String> {
+  pub fn stringify<V: ToNapiValue>(&self, value: V) -> Result<std::string::String> {
     let func: Function<V, std::string::String> = self.get_named_property_unchecked("stringify")?;
     func.call(value)
   }

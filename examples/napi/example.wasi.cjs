@@ -65,6 +65,29 @@ const { instance: __napiInstance, module: __wasiModule, napiModule: __napiModule
     worker.onmessage = ({ data }) => {
       __wasmCreateOnMessageForFsProxy(__nodeFs)(data)
     }
+
+    // The main thread of Node.js waits for all the active handles before exiting.
+    // But Rust threads are never waited without `thread::join`.
+    // So here we hack the code of Node.js to prevent the workers from being referenced (active).
+    // According to https://github.com/nodejs/node/blob/19e0d472728c79d418b74bddff588bea70a403d0/lib/internal/worker.js#L415,
+    // a worker is consist of two handles: kPublicPort and kHandle.
+    {
+      const kPublicPort = Object.getOwnPropertySymbols(worker).find(s =>
+        s.toString().includes("kPublicPort")
+      );
+      if (kPublicPort) {
+        worker[kPublicPort].ref = () => {};
+      }
+
+      const kHandle = Object.getOwnPropertySymbols(worker).find(s =>
+        s.toString().includes("kHandle")
+      );
+      if (kHandle) {
+        worker[kHandle].ref = () => {};
+      }
+
+      worker.unref();
+    }
     return worker
   },
   overwriteImports(importObject) {
@@ -84,6 +107,7 @@ const { instance: __napiInstance, module: __wasiModule, napiModule: __napiModule
     }
   },
 })
+module.exports = __napiModule.exports
 module.exports.Animal = __napiModule.exports.Animal
 module.exports.AnimalWithDefaultConstructor = __napiModule.exports.AnimalWithDefaultConstructor
 module.exports.AnotherClassForEither = __napiModule.exports.AnotherClassForEither
@@ -101,9 +125,11 @@ module.exports.Blake2bKey = __napiModule.exports.Blake2bKey
 module.exports.CatchOnConstructor = __napiModule.exports.CatchOnConstructor
 module.exports.CatchOnConstructor2 = __napiModule.exports.CatchOnConstructor2
 module.exports.ClassInArray = __napiModule.exports.ClassInArray
+module.exports.ClassReturnInPromise = __napiModule.exports.ClassReturnInPromise
 module.exports.ClassWithFactory = __napiModule.exports.ClassWithFactory
 module.exports.ClassWithLifetime = __napiModule.exports.ClassWithLifetime
 module.exports.Context = __napiModule.exports.Context
+module.exports.CreateStringClass = __napiModule.exports.CreateStringClass
 module.exports.CssRuleList = __napiModule.exports.CssRuleList
 module.exports.CSSRuleList = __napiModule.exports.CSSRuleList
 module.exports.CssStyleSheet = __napiModule.exports.CssStyleSheet
@@ -117,8 +143,12 @@ module.exports.Fib2 = __napiModule.exports.Fib2
 module.exports.Fib3 = __napiModule.exports.Fib3
 module.exports.GetterSetterWithClosures = __napiModule.exports.GetterSetterWithClosures
 module.exports.JsClassForEither = __napiModule.exports.JsClassForEither
+module.exports.JSOnlyMethodsClass = __napiModule.exports.JSOnlyMethodsClass
+module.exports.RustOnlyMethodsClass = __napiModule.exports.RustOnlyMethodsClass
 module.exports.JsRemote = __napiModule.exports.JsRemote
 module.exports.JsRepo = __napiModule.exports.JsRepo
+module.exports.MyJsNamedClass = __napiModule.exports.MyJsNamedClass
+module.exports.OriginalRustNameForJsNamedStruct = __napiModule.exports.OriginalRustNameForJsNamedStruct
 module.exports.NinjaTurtle = __napiModule.exports.NinjaTurtle
 module.exports.NotUseNullableClass = __napiModule.exports.NotUseNullableClass
 module.exports.NotWritableClass = __napiModule.exports.NotWritableClass
@@ -126,6 +156,8 @@ module.exports.Optional = __napiModule.exports.Optional
 module.exports.PackageJsonReader = __napiModule.exports.PackageJsonReader
 module.exports.Reader = __napiModule.exports.Reader
 module.exports.Selector = __napiModule.exports.Selector
+module.exports.Thing = __napiModule.exports.Thing
+module.exports.ThingList = __napiModule.exports.ThingList
 module.exports.UseNullableClass = __napiModule.exports.UseNullableClass
 module.exports.Width = __napiModule.exports.Width
 module.exports.acceptArraybuffer = __napiModule.exports.acceptArraybuffer
@@ -136,17 +168,21 @@ module.exports.acceptThreadsafeFunctionFatal = __napiModule.exports.acceptThread
 module.exports.acceptThreadsafeFunctionTupleArgs = __napiModule.exports.acceptThreadsafeFunctionTupleArgs
 module.exports.acceptUint8ClampedSlice = __napiModule.exports.acceptUint8ClampedSlice
 module.exports.acceptUint8ClampedSliceAndBufferSlice = __napiModule.exports.acceptUint8ClampedSliceAndBufferSlice
+module.exports.acceptUntypedTypedArray = __napiModule.exports.acceptUntypedTypedArray
 module.exports.add = __napiModule.exports.add
 module.exports.ALIAS = __napiModule.exports.ALIAS
 module.exports.AliasedEnum = __napiModule.exports.AliasedEnum
 module.exports.appendBuffer = __napiModule.exports.appendBuffer
 module.exports.apply0 = __napiModule.exports.apply0
 module.exports.apply1 = __napiModule.exports.apply1
+module.exports.arrayBufferFromData = __napiModule.exports.arrayBufferFromData
 module.exports.arrayBufferPassThrough = __napiModule.exports.arrayBufferPassThrough
 module.exports.asyncBufferToArray = __napiModule.exports.asyncBufferToArray
 module.exports.asyncMultiTwo = __napiModule.exports.asyncMultiTwo
 module.exports.asyncPlus100 = __napiModule.exports.asyncPlus100
 module.exports.asyncReduceBuffer = __napiModule.exports.asyncReduceBuffer
+module.exports.asyncResolveArray = __napiModule.exports.asyncResolveArray
+module.exports.asyncTaskFinally = __napiModule.exports.asyncTaskFinally
 module.exports.asyncTaskOptionalReturn = __napiModule.exports.asyncTaskOptionalReturn
 module.exports.asyncTaskReadFile = __napiModule.exports.asyncTaskReadFile
 module.exports.asyncTaskVoidReturn = __napiModule.exports.asyncTaskVoidReturn
@@ -164,6 +200,7 @@ module.exports.call0 = __napiModule.exports.call0
 module.exports.call1 = __napiModule.exports.call1
 module.exports.call2 = __napiModule.exports.call2
 module.exports.callAsyncWithUnknownReturnValue = __napiModule.exports.callAsyncWithUnknownReturnValue
+module.exports.callbackInSpawn = __napiModule.exports.callbackInSpawn
 module.exports.callbackReturnPromise = __napiModule.exports.callbackReturnPromise
 module.exports.callbackReturnPromiseAndSpawn = __napiModule.exports.callbackReturnPromiseAndSpawn
 module.exports.callCatchOnPromise = __napiModule.exports.callCatchOnPromise
@@ -198,9 +235,12 @@ module.exports.createBigIntI64 = __napiModule.exports.createBigIntI64
 module.exports.createBufferSliceFromCopiedData = __napiModule.exports.createBufferSliceFromCopiedData
 module.exports.createExternal = __napiModule.exports.createExternal
 module.exports.createExternalBufferSlice = __napiModule.exports.createExternalBufferSlice
+module.exports.createExternalRef = __napiModule.exports.createExternalRef
 module.exports.createExternalString = __napiModule.exports.createExternalString
 module.exports.createExternalTypedArray = __napiModule.exports.createExternalTypedArray
+module.exports.createFunction = __napiModule.exports.createFunction
 module.exports.createObj = __napiModule.exports.createObj
+module.exports.createObjectRef = __napiModule.exports.createObjectRef
 module.exports.createObjectWithClassField = __napiModule.exports.createObjectWithClassField
 module.exports.createObjWithProperty = __napiModule.exports.createObjWithProperty
 module.exports.createOptionalExternal = __napiModule.exports.createOptionalExternal
@@ -209,18 +249,24 @@ module.exports.createReadableStreamFromClass = __napiModule.exports.createReadab
 module.exports.createReferenceOnFunction = __napiModule.exports.createReferenceOnFunction
 module.exports.createSymbol = __napiModule.exports.createSymbol
 module.exports.createSymbolFor = __napiModule.exports.createSymbolFor
+module.exports.createSymbolRef = __napiModule.exports.createSymbolRef
+module.exports.createUint8ClampedArrayFromData = __napiModule.exports.createUint8ClampedArrayFromData
+module.exports.createUint8ClampedArrayFromExternal = __napiModule.exports.createUint8ClampedArrayFromExternal
 module.exports.CustomNumEnum = __napiModule.exports.CustomNumEnum
 module.exports.customStatusCode = __napiModule.exports.customStatusCode
 module.exports.CustomStringEnum = __napiModule.exports.CustomStringEnum
 module.exports.dateToNumber = __napiModule.exports.dateToNumber
 module.exports.DEFAULT_COST = __napiModule.exports.DEFAULT_COST
+module.exports.defineClass = __napiModule.exports.defineClass
 module.exports.derefUint8Array = __napiModule.exports.derefUint8Array
 module.exports.either3 = __napiModule.exports.either3
 module.exports.either4 = __napiModule.exports.either4
 module.exports.eitherBoolOrFunction = __napiModule.exports.eitherBoolOrFunction
 module.exports.eitherBoolOrTuple = __napiModule.exports.eitherBoolOrTuple
+module.exports.eitherF64OrU32 = __napiModule.exports.eitherF64OrU32
 module.exports.eitherFromObjects = __napiModule.exports.eitherFromObjects
 module.exports.eitherFromOption = __napiModule.exports.eitherFromOption
+module.exports.eitherPromiseInEitherA = __napiModule.exports.eitherPromiseInEitherA
 module.exports.eitherStringOrNumber = __napiModule.exports.eitherStringOrNumber
 module.exports.Empty = __napiModule.exports.Empty
 module.exports.enumToI32 = __napiModule.exports.enumToI32
@@ -232,6 +278,7 @@ module.exports.f64ArrayToArray = __napiModule.exports.f64ArrayToArray
 module.exports.fibonacci = __napiModule.exports.fibonacci
 module.exports.fnReceivedAliased = __napiModule.exports.fnReceivedAliased
 module.exports.generateFunctionAndCallIt = __napiModule.exports.generateFunctionAndCallIt
+module.exports.getBigintJsonValue = __napiModule.exports.getBigintJsonValue
 module.exports.getBtreeMapping = __napiModule.exports.getBtreeMapping
 module.exports.getBuffer = __napiModule.exports.getBuffer
 module.exports.getBufferSlice = __napiModule.exports.getBufferSlice
@@ -274,6 +321,7 @@ module.exports.mutateExternal = __napiModule.exports.mutateExternal
 module.exports.mutateOptionalExternal = __napiModule.exports.mutateOptionalExternal
 module.exports.mutateTypedArray = __napiModule.exports.mutateTypedArray
 module.exports.objectGetNamedPropertyShouldPerformTypecheck = __napiModule.exports.objectGetNamedPropertyShouldPerformTypecheck
+module.exports.objectWithCApis = __napiModule.exports.objectWithCApis
 module.exports.optionEnd = __napiModule.exports.optionEnd
 module.exports.optionOnly = __napiModule.exports.optionOnly
 module.exports.optionStart = __napiModule.exports.optionStart
@@ -288,10 +336,12 @@ module.exports.passSetToRust = __napiModule.exports.passSetToRust
 module.exports.passSetWithHasherToJs = __napiModule.exports.passSetWithHasherToJs
 module.exports.plusOne = __napiModule.exports.plusOne
 module.exports.promiseInEither = __napiModule.exports.promiseInEither
+module.exports.promiseRawReturnClassInstance = __napiModule.exports.promiseRawReturnClassInstance
 module.exports.readFile = __napiModule.exports.readFile
 module.exports.readFileAsync = __napiModule.exports.readFileAsync
 module.exports.readPackageJson = __napiModule.exports.readPackageJson
 module.exports.receiveAllOptionalObject = __napiModule.exports.receiveAllOptionalObject
+module.exports.receiveBindingVitePluginMeta = __napiModule.exports.receiveBindingVitePluginMeta
 module.exports.receiveBufferSliceWithLifetime = __napiModule.exports.receiveBufferSliceWithLifetime
 module.exports.receiveClassOrNumber = __napiModule.exports.receiveClassOrNumber
 module.exports.receiveDifferentClass = __napiModule.exports.receiveDifferentClass
@@ -314,7 +364,10 @@ module.exports.roundtripStr = __napiModule.exports.roundtripStr
 module.exports.runScript = __napiModule.exports.runScript
 module.exports.setNullByteProperty = __napiModule.exports.setNullByteProperty
 module.exports.setSymbolInObj = __napiModule.exports.setSymbolInObj
+module.exports.shorterEscapableScope = __napiModule.exports.shorterEscapableScope
+module.exports.shorterScope = __napiModule.exports.shorterScope
 module.exports.shutdownRuntime = __napiModule.exports.shutdownRuntime
+module.exports.spawnFutureLifetime = __napiModule.exports.spawnFutureLifetime
 module.exports.spawnThreadInThread = __napiModule.exports.spawnThreadInThread
 module.exports.Status = __napiModule.exports.Status
 module.exports.StatusInValidate = __napiModule.exports.StatusInValidate
@@ -323,13 +376,16 @@ module.exports.sumBtreeMapping = __napiModule.exports.sumBtreeMapping
 module.exports.sumIndexMapping = __napiModule.exports.sumIndexMapping
 module.exports.sumMapping = __napiModule.exports.sumMapping
 module.exports.sumNums = __napiModule.exports.sumNums
+module.exports.testEscapedQuotesInComments = __napiModule.exports.testEscapedQuotesInComments
 module.exports.testSerdeBigNumberPrecision = __napiModule.exports.testSerdeBigNumberPrecision
 module.exports.testSerdeBufferBytes = __napiModule.exports.testSerdeBufferBytes
 module.exports.testSerdeRoundtrip = __napiModule.exports.testSerdeRoundtrip
+module.exports.threadsafeFunctionBuildThrowErrorWithStatus = __napiModule.exports.threadsafeFunctionBuildThrowErrorWithStatus
 module.exports.threadsafeFunctionClosureCapture = __napiModule.exports.threadsafeFunctionClosureCapture
 module.exports.threadsafeFunctionFatalMode = __napiModule.exports.threadsafeFunctionFatalMode
 module.exports.threadsafeFunctionFatalModeError = __napiModule.exports.threadsafeFunctionFatalModeError
 module.exports.threadsafeFunctionThrowError = __napiModule.exports.threadsafeFunctionThrowError
+module.exports.threadsafeFunctionThrowErrorWithStatus = __napiModule.exports.threadsafeFunctionThrowErrorWithStatus
 module.exports.throwAsyncError = __napiModule.exports.throwAsyncError
 module.exports.throwError = __napiModule.exports.throwError
 module.exports.throwSyntaxError = __napiModule.exports.throwSyntaxError
@@ -340,12 +396,16 @@ module.exports.tsfnInEither = __napiModule.exports.tsfnInEither
 module.exports.tsfnReturnPromise = __napiModule.exports.tsfnReturnPromise
 module.exports.tsfnReturnPromiseTimeout = __napiModule.exports.tsfnReturnPromiseTimeout
 module.exports.tsfnThrowFromJs = __napiModule.exports.tsfnThrowFromJs
+module.exports.tsfnThrowFromJsCallbackContainsTsfn = __napiModule.exports.tsfnThrowFromJsCallbackContainsTsfn
+module.exports.tsfnWeak = __napiModule.exports.tsfnWeak
 module.exports.tsRename = __napiModule.exports.tsRename
 module.exports.u16ArrayToArray = __napiModule.exports.u16ArrayToArray
 module.exports.u32ArrayToArray = __napiModule.exports.u32ArrayToArray
 module.exports.u64ArrayToArray = __napiModule.exports.u64ArrayToArray
 module.exports.u8ArrayToArray = __napiModule.exports.u8ArrayToArray
 module.exports.uInit8ArrayFromString = __napiModule.exports.uInit8ArrayFromString
+module.exports.uint8ArrayFromData = __napiModule.exports.uint8ArrayFromData
+module.exports.uint8ArrayFromExternal = __napiModule.exports.uint8ArrayFromExternal
 module.exports.validateArray = __napiModule.exports.validateArray
 module.exports.validateBigint = __napiModule.exports.validateBigint
 module.exports.validateBoolean = __napiModule.exports.validateBoolean
@@ -375,3 +435,4 @@ module.exports.withoutAbortController = __napiModule.exports.withoutAbortControl
 module.exports.xxh64Alias = __napiModule.exports.xxh64Alias
 module.exports.xxh2 = __napiModule.exports.xxh2
 module.exports.xxh3 = __napiModule.exports.xxh3
+module.exports.ComplexClass = __napiModule.exports.ComplexClass

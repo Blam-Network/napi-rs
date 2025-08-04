@@ -1,12 +1,11 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, unlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { tmpdir, homedir } from 'node:os'
+import { homedir } from 'node:os'
 import { parse, join, resolve } from 'node:path'
 
 import * as colors from 'colorette'
-import { include as setjmpInclude, lib as setjmpLib } from 'wasm-sjlj'
 
 import { BuildOptions as RawBuildOptions } from '../def/build.js'
 import {
@@ -30,6 +29,9 @@ import {
   tryInstallCargoBinary,
   unlinkAsync,
   writeFileAsync,
+  dirExistsAsync,
+  readdirAsync,
+  CargoWorkspaceMetadata,
 } from '../utils/index.js'
 
 import { createCjsBinding, createEsmBinding } from './templates/index.js'
@@ -46,31 +48,26 @@ const debug = debugFactory('build')
 const require = createRequire(import.meta.url)
 
 type OutputKind = 'js' | 'dts' | 'node' | 'exe' | 'wasm'
-type Output = {
-  kind: OutputKind
-  path: string
-}
+type Output = { kind: OutputKind; path: string }
 
-type BuildOptions = RawBuildOptions & {
-  cargoOptions?: string[]
-}
+type BuildOptions = RawBuildOptions & { cargoOptions?: string[] }
+type ParsedBuildOptions = Omit<BuildOptions, 'cwd'> & { cwd: string }
 
-export async function buildProject(options: BuildOptions) {
-  debug('napi build command receive options: %O', options)
+export async function buildProject(rawOptions: BuildOptions) {
+  debug('napi build command receive options: %O', rawOptions)
 
-  options = {
+  const options: ParsedBuildOptions = {
     dtsCache: true,
-    ...options,
+    ...rawOptions,
+    cwd: rawOptions.cwd ?? process.cwd(),
   }
 
-  const cwd = options.cwd ?? process.cwd()
-
-  const resolvePath = (...paths: string[]) => resolve(cwd, ...paths)
+  const resolvePath = (...paths: string[]) => resolve(options.cwd, ...paths)
 
   const manifestPath = resolvePath(options.manifestPath ?? 'Cargo.toml')
-  const metadata = parseMetadata(manifestPath)
+  const metadata = await parseMetadata(manifestPath)
 
-  const pkg = metadata.packages.find((p) => {
+  const crate = metadata.packages.find((p) => {
     // package with given name
     if (options.package) {
       return p.name === options.package
@@ -79,35 +76,19 @@ export async function buildProject(options: BuildOptions) {
     }
   })
 
-  if (!pkg) {
+  if (!crate) {
     throw new Error(
       'Unable to find crate to build. It seems you are trying to build a crate in a workspace, try using `--package` option to specify the package to build.',
     )
   }
-
-  const crateDir = parse(pkg.manifest_path).dir
-
-  const builder = new Builder(
-    options,
-    pkg,
-    cwd,
-    options.target
-      ? parseTriple(options.target)
-      : process.env.CARGO_BUILD_TARGET
-        ? parseTriple(process.env.CARGO_BUILD_TARGET)
-        : getSystemDefaultTarget(),
-    crateDir,
-    resolvePath(options.outputDir ?? crateDir),
-    options.targetDir ??
-      process.env.CARGO_BUILD_TARGET_DIR ??
-      metadata.target_directory,
-    await readNapiConfig(
-      resolvePath(
-        options.configPath ?? options.packageJsonPath ?? 'package.json',
-      ),
-      options.configPath ? resolvePath(options.configPath) : undefined,
+  const config = await readNapiConfig(
+    resolvePath(
+      options.configPath ?? options.packageJsonPath ?? 'package.json',
     ),
+    options.configPath ? resolvePath(options.configPath) : undefined,
   )
+
+  const builder = new Builder(metadata, crate, config, options)
 
   return builder.build()
 }
@@ -117,16 +98,57 @@ class Builder {
   private readonly envs: Record<string, string> = {}
   private readonly outputs: Output[] = []
 
+  private readonly target: Target
+  private readonly crateDir: string
+  private readonly outputDir: string
+  private readonly targetDir: string
+  private readonly enableTypeDef: boolean = false
+
   constructor(
-    private readonly options: BuildOptions,
+    private readonly metadata: CargoWorkspaceMetadata,
     private readonly crate: Crate,
-    private readonly cwd: string,
-    private readonly target: Target,
-    private readonly crateDir: string,
-    private readonly outputDir: string,
-    private readonly targetDir: string,
     private readonly config: NapiConfig,
-  ) {}
+    private readonly options: ParsedBuildOptions,
+  ) {
+    this.target = options.target
+      ? parseTriple(options.target)
+      : process.env.CARGO_BUILD_TARGET
+        ? parseTriple(process.env.CARGO_BUILD_TARGET)
+        : getSystemDefaultTarget()
+    this.crateDir = parse(crate.manifest_path).dir
+    this.outputDir = resolve(
+      this.options.cwd,
+      options.outputDir ?? this.crateDir,
+    )
+    this.targetDir =
+      options.targetDir ??
+      process.env.CARGO_BUILD_TARGET_DIR ??
+      metadata.target_directory
+    this.enableTypeDef = this.crate.dependencies.some(
+      (dep) =>
+        dep.name === 'napi-derive' &&
+        (dep.uses_default_features || dep.features.includes('type-def')),
+    )
+
+    if (!this.enableTypeDef) {
+      const requirementWarning =
+        '`napi-derive` crate is not used or `type-def` feature is not enabled for `napi-derive` crate'
+      debug.warn(
+        `${requirementWarning}. Will skip binding generation for \`.node\`, \`.wasi\` and \`.d.ts\` files.`,
+      )
+
+      if (
+        this.options.dts ||
+        this.options.dtsHeader ||
+        this.config.dtsHeader ||
+        this.config.dtsHeaderFile
+      ) {
+        debug.warn(
+          `${requirementWarning}. \`dts\` related options are enabled but will be ignored.`,
+        )
+      }
+    }
+  }
 
   get cdyLibName() {
     return this.crate.targets.find((t) => t.crate_types.includes('cdylib'))
@@ -247,16 +269,14 @@ class Builder {
           'include/',
         )
       }
-      if (!process.env.CC && !process.env.TARGET_CC) {
-        this.envs[`CC`] = join(toolchainPath, 'bin', `${crossTargetName}-gcc`)
+      if (!process.env.TARGET_CC) {
         this.envs[`TARGET_CC`] = join(
           toolchainPath,
           'bin',
           `${crossTargetName}-gcc`,
         )
       }
-      if (!process.env.CXX && !process.env.TARGET_CXX) {
-        this.envs[`CXX`] = join(toolchainPath, 'bin', `${crossTargetName}-g++`)
+      if (!process.env.TARGET_CXX) {
         this.envs[`TARGET_CXX`] = join(
           toolchainPath,
           'bin',
@@ -264,22 +284,18 @@ class Builder {
         )
       }
       if (
-        (process.env.CC?.startsWith('clang') &&
-          (process.env.TARGET_CC?.startsWith('clang') ||
-            !process.env.TARGET_CC)) ||
-        process.env.TARGET_CC?.startsWith('clang')
+        process.env.TARGET_CC?.startsWith('clang') ||
+        (process.env.CC?.startsWith('clang') && !process.env.TARGET_CC)
       ) {
-        const CFLAGS = process.env.CFLAGS ?? ''
-        this.envs.CFLAGS = `--sysroot=${this.envs.TARGET_SYSROOT} --gcc-toolchain=${toolchainPath} ${CFLAGS}`
+        const TARGET_CFLAGS = process.env.TARGET_CFLAGS ?? ''
+        this.envs.TARGET_CFLAGS = `--sysroot=${this.envs.TARGET_SYSROOT} --gcc-toolchain=${toolchainPath} ${TARGET_CFLAGS}`
       }
       if (
-        (process.env.CXX?.startsWith('clang++') &&
-          (process.env.TARGET_CXX?.startsWith('clang++') ||
-            !process.env.TARGET_CXX)) ||
+        (process.env.CXX?.startsWith('clang++') && !process.env.TARGET_CXX) ||
         process.env.TARGET_CXX?.startsWith('clang++')
       ) {
-        const CXXFLAGS = process.env.CXXFLAGS ?? ''
-        this.envs.CXXFLAGS = `--sysroot=${this.envs.TARGET_SYSROOT} --gcc-toolchain=${toolchainPath} ${CXXFLAGS} ${CXXFLAGS}`
+        const TARGET_CXXFLAGS = process.env.TARGET_CXXFLAGS ?? ''
+        this.envs.TARGET_CXXFLAGS = `--sysroot=${this.envs.TARGET_SYSROOT} --gcc-toolchain=${toolchainPath} ${TARGET_CXXFLAGS}`
       }
       this.envs.PATH = this.envs.PATH
         ? `${toolchainPath}/bin:${this.envs.PATH}:${process.env.PATH}`
@@ -307,12 +323,9 @@ class Builder {
       const command =
         process.env.CARGO ?? (this.options.useCross ? 'cross' : 'cargo')
       const buildProcess = spawn(command, this.args, {
-        env: {
-          ...process.env,
-          ...this.envs,
-        },
+        env: { ...process.env, ...this.envs },
         stdio: watch ? ['inherit', 'inherit', 'pipe'] : 'inherit',
-        cwd: this.cwd,
+        cwd: this.options.cwd,
         signal: controller.signal,
       })
 
@@ -326,11 +339,7 @@ class Builder {
       })
 
       buildProcess.once('error', (e) => {
-        reject(
-          new Error(`Build failed with error: ${e.message}`, {
-            cause: e,
-          }),
-        )
+        reject(new Error(`Build failed with error: ${e.message}`, { cause: e }))
       })
 
       // watch mode only, they are piped through stderr
@@ -461,13 +470,12 @@ class Builder {
   }
 
   private setEnvs() {
-    // type definition intermediate file
-    this.envs.TYPE_DEF_TMP_PATH = this.getIntermediateTypeFile()
-    // WASI register intermediate file
-    this.envs.WASI_REGISTER_TMP_PATH = this.getIntermediateWasiRegisterFile()
-    // TODO:
-    //   remove after napi-derive@v3 release
-    this.envs.CARGO_CFG_NAPI_RS_CLI_VERSION = CLI_VERSION
+    // TYPE DEF
+    if (this.enableTypeDef) {
+      this.envs.NAPI_TYPE_DEF_TMP_FOLDER =
+        this.generateIntermediateTypeDefFolder()
+      this.setForceBuildEnvs(this.envs.NAPI_TYPE_DEF_TMP_FOLDER)
+    }
 
     // RUSTFLAGS
     let rustflags =
@@ -505,86 +513,15 @@ class Builder {
     }
 
     if (this.target.platform === 'android') {
-      const { ANDROID_NDK_LATEST_HOME } = process.env
-      if (!ANDROID_NDK_LATEST_HOME) {
-        debug.warn(
-          `${colors.red(
-            'ANDROID_NDK_LATEST_HOME',
-          )} environment variable is missing`,
-        )
-      }
-
-      const targetArch = this.target.arch === 'arm' ? 'armv7a' : 'aarch64'
-      const targetPlatform =
-        this.target.arch === 'arm' ? 'androideabi24' : 'android24'
-      const hostPlatform =
-        process.platform === 'darwin'
-          ? 'darwin'
-          : process.platform === 'win32'
-            ? 'windows'
-            : 'linux'
-      Object.assign(this.envs, {
-        CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: `${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/${hostPlatform}-x86_64/bin/${targetArch}-linux-android24-clang`,
-        CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER: `${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/${hostPlatform}-x86_64/bin/${targetArch}-linux-androideabi24-clang`,
-        TARGET_CC: `${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/${hostPlatform}-x86_64/bin/${targetArch}-linux-${targetPlatform}-clang`,
-        TARGET_CXX: `${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/${hostPlatform}-x86_64/bin/${targetArch}-linux-${targetPlatform}-clang++`,
-        TARGET_AR: `${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/${hostPlatform}-x86_64/bin/llvm-ar`,
-        TARGET_RANLIB: `${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/${hostPlatform}-x86_64/bin/llvm-ranlib`,
-        ANDROID_NDK: ANDROID_NDK_LATEST_HOME,
-        PATH: `${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/${hostPlatform}-x86_64/bin:${process.env.PATH}`,
-      })
+      this.setAndroidEnv()
     }
-    // END LINKER
 
     if (this.target.platform === 'wasi') {
-      const emnapi = join(
-        require.resolve('emnapi'),
-        '..',
-        'lib',
-        'wasm32-wasi-threads',
-      )
-      this.envs.EMNAPI_LINK_DIR = emnapi
-      this.envs.SETJMP_LINK_DIR = setjmpLib
-      const { WASI_SDK_PATH } = process.env
+      this.setWasiEnv()
+    }
 
-      if (WASI_SDK_PATH && existsSync(WASI_SDK_PATH)) {
-        this.envs.CARGO_TARGET_WASM32_WASI_PREVIEW1_THREADS_LINKER = join(
-          WASI_SDK_PATH,
-          'bin',
-          'wasm-ld',
-        )
-        this.envs.CARGO_TARGET_WASM32_WASIP1_LINKER = join(
-          WASI_SDK_PATH,
-          'bin',
-          'wasm-ld',
-        )
-        this.envs.CARGO_TARGET_WASM32_WASIP1_THREADS_LINKER = join(
-          WASI_SDK_PATH,
-          'bin',
-          'wasm-ld',
-        )
-        this.envs.CARGO_TARGET_WASM32_WASIP2_LINKER = join(
-          WASI_SDK_PATH,
-          'bin',
-          'wasm-ld',
-        )
-        this.setEnvIfNotExists('CC', join(WASI_SDK_PATH, 'bin', 'clang'))
-        this.setEnvIfNotExists('CXX', join(WASI_SDK_PATH, 'bin', 'clang++'))
-        this.setEnvIfNotExists('AR', join(WASI_SDK_PATH, 'bin', 'ar'))
-        this.setEnvIfNotExists('RANLIB', join(WASI_SDK_PATH, 'bin', 'ranlib'))
-        this.setEnvIfNotExists(
-          'CFLAGS',
-          `--target=wasm32-wasi-threads --sysroot=${WASI_SDK_PATH}/share/wasi-sysroot -pthread -mllvm -wasm-enable-sjlj -I${setjmpInclude}`,
-        )
-        this.setEnvIfNotExists(
-          'CXXFLAGS',
-          `--target=wasm32-wasi-threads --sysroot=${WASI_SDK_PATH}/share/wasi-sysroot -pthread -mllvm -wasm-enable-sjlj -I${setjmpInclude}`,
-        )
-        this.setEnvIfNotExists(
-          `LDFLAGS`,
-          `-fuse-ld=${WASI_SDK_PATH}/bin/wasm-ld --target=wasm32-wasi-threads`,
-        )
-      }
+    if (this.target.platform === 'openharmony') {
+      this.setOpenHarmonyEnv()
     }
 
     debug('Set envs: ')
@@ -593,6 +530,154 @@ class Builder {
     })
 
     return this
+  }
+
+  private setForceBuildEnvs(typeDefTmpFolder: string) {
+    // dynamically check all napi-rs deps and set `NAPI_FORCE_BUILD_{uppercase(snake_case(name))} = timestamp`
+    this.metadata.packages.forEach((crate) => {
+      if (
+        crate.dependencies.some((d) => d.name === 'napi-derive') &&
+        !existsSync(join(typeDefTmpFolder, crate.name))
+      ) {
+        this.envs[
+          `NAPI_FORCE_BUILD_${crate.name.replace(/-/g, '_').toUpperCase()}`
+        ] = Date.now().toString()
+      }
+    })
+  }
+
+  private setAndroidEnv() {
+    const { ANDROID_NDK_LATEST_HOME } = process.env
+    if (!ANDROID_NDK_LATEST_HOME) {
+      debug.warn(
+        `${colors.red(
+          'ANDROID_NDK_LATEST_HOME',
+        )} environment variable is missing`,
+      )
+    }
+
+    // skip cross compile setup if host is android
+    if (process.platform === 'android') {
+      return
+    }
+
+    const targetArch = this.target.arch === 'arm' ? 'armv7a' : 'aarch64'
+    const targetPlatform =
+      this.target.arch === 'arm' ? 'androideabi24' : 'android24'
+    const hostPlatform =
+      process.platform === 'darwin'
+        ? 'darwin'
+        : process.platform === 'win32'
+          ? 'windows'
+          : 'linux'
+    Object.assign(this.envs, {
+      CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: `${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/${hostPlatform}-x86_64/bin/${targetArch}-linux-android24-clang`,
+      CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER: `${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/${hostPlatform}-x86_64/bin/${targetArch}-linux-androideabi24-clang`,
+      TARGET_CC: `${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/${hostPlatform}-x86_64/bin/${targetArch}-linux-${targetPlatform}-clang`,
+      TARGET_CXX: `${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/${hostPlatform}-x86_64/bin/${targetArch}-linux-${targetPlatform}-clang++`,
+      TARGET_AR: `${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/${hostPlatform}-x86_64/bin/llvm-ar`,
+      TARGET_RANLIB: `${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/${hostPlatform}-x86_64/bin/llvm-ranlib`,
+      ANDROID_NDK: ANDROID_NDK_LATEST_HOME,
+      PATH: `${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/${hostPlatform}-x86_64/bin${process.platform === 'win32' ? ';' : ':'}${process.env.PATH}`,
+    })
+  }
+
+  private setWasiEnv() {
+    const emnapi = join(
+      require.resolve('emnapi'),
+      '..',
+      'lib',
+      'wasm32-wasi-threads',
+    )
+    this.envs.EMNAPI_LINK_DIR = emnapi
+    const { WASI_SDK_PATH } = process.env
+
+    if (WASI_SDK_PATH && existsSync(WASI_SDK_PATH)) {
+      this.envs.CARGO_TARGET_WASM32_WASI_PREVIEW1_THREADS_LINKER = join(
+        WASI_SDK_PATH,
+        'bin',
+        'wasm-ld',
+      )
+      this.envs.CARGO_TARGET_WASM32_WASIP1_LINKER = join(
+        WASI_SDK_PATH,
+        'bin',
+        'wasm-ld',
+      )
+      this.envs.CARGO_TARGET_WASM32_WASIP1_THREADS_LINKER = join(
+        WASI_SDK_PATH,
+        'bin',
+        'wasm-ld',
+      )
+      this.envs.CARGO_TARGET_WASM32_WASIP2_LINKER = join(
+        WASI_SDK_PATH,
+        'bin',
+        'wasm-ld',
+      )
+      this.setEnvIfNotExists('TARGET_CC', join(WASI_SDK_PATH, 'bin', 'clang'))
+      this.setEnvIfNotExists(
+        'TARGET_CXX',
+        join(WASI_SDK_PATH, 'bin', 'clang++'),
+      )
+      this.setEnvIfNotExists('TARGET_AR', join(WASI_SDK_PATH, 'bin', 'ar'))
+      this.setEnvIfNotExists(
+        'TARGET_RANLIB',
+        join(WASI_SDK_PATH, 'bin', 'ranlib'),
+      )
+      this.setEnvIfNotExists(
+        'TARGET_CFLAGS',
+        `--target=wasm32-wasi-threads --sysroot=${WASI_SDK_PATH}/share/wasi-sysroot -pthread -mllvm -wasm-enable-sjlj`,
+      )
+      this.setEnvIfNotExists(
+        'TARGET_CXXFLAGS',
+        `--target=wasm32-wasi-threads --sysroot=${WASI_SDK_PATH}/share/wasi-sysroot -pthread -mllvm -wasm-enable-sjlj`,
+      )
+      this.setEnvIfNotExists(
+        `TARGET_LDFLAGS`,
+        `-fuse-ld=${WASI_SDK_PATH}/bin/wasm-ld --target=wasm32-wasi-threads`,
+      )
+    }
+  }
+
+  private setOpenHarmonyEnv() {
+    const { OHOS_SDK_PATH, OHOS_SDK_NATIVE } = process.env
+    const ndkPath = OHOS_SDK_PATH
+      ? `${OHOS_SDK_NATIVE}/native`
+      : OHOS_SDK_NATIVE
+    // @ts-expect-error
+    if (!ndkPath && process.platform !== 'openharmony') {
+      debug.warn(
+        `${colors.red('OHOS_SDK_PATH')} or ${colors.red('OHOS_SDK_NATIVE')} environment variable is missing`,
+      )
+      return
+    }
+    const linkerName = `CARGO_TARGET_${this.target.triple.toUpperCase().replace(/-/g, '_')}_LINKER`
+    const ranPath = `${ndkPath}/llvm/bin/llvm-ranlib`
+    const arPath = `${ndkPath}/llvm/bin/llvm-ar`
+    const ccPath = `${ndkPath}/llvm/bin/${this.target.triple}-clang`
+    const cxxPath = `${ndkPath}/llvm/bin/${this.target.triple}-clang++`
+    const asPath = `${ndkPath}/llvm/bin/llvm-as`
+    const ldPath = `${ndkPath}/llvm/bin/ld.lld`
+    const stripPath = `${ndkPath}/llvm/bin/llvm-strip`
+    const objDumpPath = `${ndkPath}/llvm/bin/llvm-objdump`
+    const objCopyPath = `${ndkPath}/llvm/bin/llvm-objcopy`
+    const nmPath = `${ndkPath}/llvm/bin/llvm-nm`
+    const binPath = `${ndkPath}/llvm/bin`
+    const libPath = `${ndkPath}/llvm/lib`
+
+    this.setEnvIfNotExists('LIBCLANG_PATH', libPath)
+    this.setEnvIfNotExists('DEP_ATOMIC', 'clang_rt.builtins')
+    this.setEnvIfNotExists(linkerName, ccPath)
+    this.setEnvIfNotExists('TARGET_CC', ccPath)
+    this.setEnvIfNotExists('TARGET_CXX', cxxPath)
+    this.setEnvIfNotExists('TARGET_AR', arPath)
+    this.setEnvIfNotExists('TARGET_RANLIB', ranPath)
+    this.setEnvIfNotExists('TARGET_AS', asPath)
+    this.setEnvIfNotExists('TARGET_LD', ldPath)
+    this.setEnvIfNotExists('TARGET_STRIP', stripPath)
+    this.setEnvIfNotExists('TARGET_OBJDUMP', objDumpPath)
+    this.setEnvIfNotExists('TARGET_OBJCOPY', objCopyPath)
+    this.setEnvIfNotExists('TARGET_NM', nmPath)
+    this.envs.PATH = `${binPath}${process.platform === 'win32' ? ';' : ':'}${process.env.PATH}`
   }
 
   private setFeatures() {
@@ -646,33 +731,25 @@ class Builder {
     return this
   }
 
-  private getIntermediateTypeFile() {
-    const dtsPath = join(
-      tmpdir(),
+  private generateIntermediateTypeDefFolder() {
+    let folder = join(
+      this.targetDir,
+      'napi-rs',
       `${this.crate.name}-${createHash('sha256')
         .update(this.crate.manifest_path)
         .update(CLI_VERSION)
         .digest('hex')
-        .substring(0, 8)}.napi_type_def`,
+        .substring(0, 8)}`,
     )
-    if (!this.options.dtsCache) {
-      try {
-        unlinkSync(dtsPath)
-      } catch {}
-      return `${dtsPath}_${Date.now()}.tmp`
-    }
-    return `${dtsPath}.tmp`
-  }
 
-  private getIntermediateWasiRegisterFile() {
-    return join(
-      tmpdir(),
-      `${this.crate.name}-${createHash('sha256')
-        .update(this.crate.manifest_path)
-        .update(CLI_VERSION)
-        .digest('hex')
-        .substring(0, 8)}.napi_wasi_register.tmp`,
-    )
+    if (!this.options.dtsCache) {
+      rmSync(folder, { recursive: true, force: true })
+      folder += `_${Date.now()}`
+    }
+
+    mkdirAsync(folder, { recursive: true })
+
+    return folder
   }
 
   private async postBuild() {
@@ -692,37 +769,9 @@ class Builder {
     // only for cdylib
     if (this.cdyLibName) {
       const idents = await this.generateTypeDef()
-      const intermediateWasiRegisterFile = this.envs.WASI_REGISTER_TMP_PATH
-      const wasiRegisterFunctions = this.config.targets.some(
-        (t) => t.platform === 'wasi',
-      )
-        ? await (async function readIntermediateWasiRegisterFile() {
-            const fileContent = await readFileAsync(
-              intermediateWasiRegisterFile,
-              'utf8',
-            ).catch((err) => {
-              console.warn(
-                `Read ${colors.yellowBright(
-                  intermediateWasiRegisterFile,
-                )} failed, reason: ${err.message}`,
-              )
-              return ``
-            })
-            return fileContent
-              .split('\n')
-              .map((l) => l.trim())
-              .filter((l) => l.length)
-              .map((line) => {
-                const [_, fn] = line.split(':')
-                return fn?.trim()
-              })
-              .filter((fn) => !!fn)
-          })()
-        : []
       const jsOutput = await this.writeJsBinding(idents)
       const wasmBindingsOutput = await this.writeWasiBinding(
-        wasiRegisterFunctions,
-        wasmBinaryName ?? 'index.wasm',
+        wasmBinaryName,
         idents,
       )
       if (jsOutput) {
@@ -798,9 +847,7 @@ class Builder {
       })
       return wasmBinaryName ? join(this.outputDir, wasmBinaryName) : null
     } catch (e) {
-      throw new Error('Failed to copy artifact', {
-        cause: e,
-      })
+      throw new Error('Failed to copy artifact', { cause: e })
     }
   }
 
@@ -849,41 +896,84 @@ class Builder {
   }
 
   private async generateTypeDef() {
-    if (!(await fileExists(this.envs.TYPE_DEF_TMP_PATH))) {
+    const typeDefDir = this.envs.NAPI_TYPE_DEF_TMP_FOLDER
+    if (!this.enableTypeDef || !(await dirExistsAsync(typeDefDir))) {
       return []
     }
 
     const dest = join(this.outputDir, this.options.dts ?? 'index.d.ts')
 
-    const { dts, exports } = await processTypeDef(
-      this.envs.TYPE_DEF_TMP_PATH,
-      this.options.constEnum ?? this.config.constEnum ?? true,
-      !this.options.noDtsHeader
-        ? (this.options.dtsHeader ??
-            (this.config.dtsHeaderFile
-              ? await readFileAsync(
-                  join(this.cwd, this.config.dtsHeaderFile),
-                  'utf-8',
-                ).catch(() => {
-                  debug.warn(
-                    `Failed to read dts header file ${this.config.dtsHeaderFile}`,
-                  )
-                  return null
-                })
-              : null) ??
-            this.config.dtsHeader ??
-            DEFAULT_TYPE_DEF_HEADER)
-        : '',
-    )
+    let header = ''
+    let dts = ''
+    let exports: string[] = []
+
+    if (!this.options.noDtsHeader) {
+      const dtsHeader = this.options.dtsHeader ?? this.config.dtsHeader
+      // `dtsHeaderFile` in config > `dtsHeader` in cli flag > `dtsHeader` in config
+      if (this.config.dtsHeaderFile) {
+        try {
+          header = await readFileAsync(
+            join(this.options.cwd, this.config.dtsHeaderFile),
+            'utf-8',
+          )
+        } catch (e) {
+          debug.warn(
+            `Failed to read dts header file ${this.config.dtsHeaderFile}`,
+            e,
+          )
+        }
+      } else if (dtsHeader) {
+        header = dtsHeader
+      } else {
+        header = DEFAULT_TYPE_DEF_HEADER
+      }
+    }
+
+    const files = await readdirAsync(typeDefDir, { withFileTypes: true })
+
+    if (!files.length) {
+      debug('No type def files found. Skip generating dts file.')
+      return []
+    }
+
+    for (const file of files) {
+      if (!file.isFile()) {
+        continue
+      }
+
+      const { dts: fileDts, exports: fileExports } = await processTypeDef(
+        join(typeDefDir, file.name),
+        this.options.constEnum ?? this.config.constEnum ?? true,
+      )
+
+      dts += fileDts
+      exports.push(...fileExports)
+    }
+
+    if (dts.indexOf('ExternalObject<') > -1) {
+      header += `
+export declare class ExternalObject<T> {
+  readonly '': {
+    readonly '': unique symbol
+    [K: symbol]: T
+  }
+}
+`
+    }
+
+    if (dts.indexOf('TypedArray') > -1) {
+      header += `
+export type TypedArray = Int8Array | Uint8Array | Uint8ClampedArray | Int16Array | Uint16Array | Int32Array | Uint32Array | Float32Array | Float64Array | BigInt64Array | BigUint64Array
+`
+    }
+
+    dts = header + dts
 
     try {
       debug('Writing type def to:')
       debug('  %i', dest)
       await writeFileAsync(dest, dts, 'utf-8')
-      this.outputs.push({
-        kind: 'dts',
-        path: dest,
-      })
+      this.outputs.push({ kind: 'dts', path: dest })
     } catch (e) {
       debug.error('Failed to write type def file')
       debug.error(e as Error)
@@ -916,21 +1006,17 @@ class Builder {
       debug('Writing js binding to:')
       debug('  %i', dest)
       await writeFileAsync(dest, binding, 'utf-8')
-      return {
-        kind: 'js',
-        path: dest,
-      } satisfies Output
+      return { kind: 'js', path: dest } satisfies Output
     } catch (e) {
       throw new Error('Failed to write js binding file', { cause: e })
     }
   }
 
   private async writeWasiBinding(
-    wasiRegisterFunctions: string[],
-    distFileName: string | undefined,
+    distFileName: string | undefined | null,
     idents: string[],
   ) {
-    if (distFileName && wasiRegisterFunctions.length) {
+    if (distFileName) {
       const { name, dir } = parse(distFileName)
       const bindingPath = join(dir, `${this.config.binaryName}.wasi.cjs`)
       const browserBindingPath = join(
@@ -940,11 +1026,14 @@ class Builder {
       const workerPath = join(dir, 'wasi-worker.mjs')
       const browserWorkerPath = join(dir, 'wasi-worker-browser.mjs')
       const browserEntryPath = join(dir, 'browser.js')
-      const exportsCode = idents
-        .map(
-          (ident) => `module.exports.${ident} = __napiModule.exports.${ident}`,
-        )
-        .join('\n')
+      const exportsCode =
+        `module.exports = __napiModule.exports\n` +
+        idents
+          .map(
+            (ident) =>
+              `module.exports.${ident} = __napiModule.exports.${ident}`,
+          )
+          .join('\n')
       await writeFileAsync(
         bindingPath,
         createWasiBinding(
@@ -965,7 +1054,9 @@ class Builder {
           this.config.wasm?.maximumMemory,
           this.config.wasm?.browser?.fs,
           this.config.wasm?.browser?.asyncInit,
+          this.config.wasm?.browser?.buffer,
         ) +
+          `export default __napiModule.exports\n` +
           idents
             .map(
               (ident) =>
@@ -986,26 +1077,11 @@ class Builder {
         `export * from '${this.config.packageName}-wasm32-wasi'\n`,
       )
       return [
-        {
-          kind: 'js',
-          path: bindingPath,
-        },
-        {
-          kind: 'js',
-          path: browserBindingPath,
-        },
-        {
-          kind: 'js',
-          path: workerPath,
-        },
-        {
-          kind: 'js',
-          path: browserWorkerPath,
-        },
-        {
-          kind: 'js',
-          path: browserEntryPath,
-        },
+        { kind: 'js', path: bindingPath },
+        { kind: 'js', path: browserBindingPath },
+        { kind: 'js', path: workerPath },
+        { kind: 'js', path: browserWorkerPath },
+        { kind: 'js', path: browserEntryPath },
       ] satisfies Output[]
     }
     return []

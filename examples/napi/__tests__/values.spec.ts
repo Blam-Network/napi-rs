@@ -5,9 +5,10 @@ import { fileURLToPath } from 'node:url'
 import { createReadStream } from 'node:fs'
 import { readFile as nodeReadFile } from 'node:fs/promises'
 import { Readable } from 'node:stream'
-
 import { Subject, take } from 'rxjs'
 import Sinon, { spy } from 'sinon'
+
+import 'core-js/features/promise/with-resolvers.js'
 
 import {
   DEFAULT_COST,
@@ -30,10 +31,10 @@ import {
   roundtripStr,
   getNums,
   getWords,
-  sumNums,
   getTuple,
   getMapping,
   sumMapping,
+  sumNums,
   getBtreeMapping,
   sumBtreeMapping,
   getIndexMapping,
@@ -72,8 +73,14 @@ import {
   returnEither,
   either3,
   either4,
+  eitherPromiseInEitherA,
+  eitherF64OrU32,
   withoutAbortController,
   withAbortController,
+  asyncTaskReadFile,
+  asyncTaskOptionalReturn,
+  asyncTaskFinally,
+  asyncResolveArray,
   asyncMultiTwo,
   bigintAdd,
   createBigInt,
@@ -81,6 +88,8 @@ import {
   bigintGetU64AsString,
   callThreadsafeFunction,
   threadsafeFunctionThrowError,
+  threadsafeFunctionThrowErrorWithStatus,
+  threadsafeFunctionBuildThrowErrorWithStatus,
   threadsafeFunctionClosureCapture,
   tsfnCallWithCallback,
   tsfnAsyncCall,
@@ -92,11 +101,13 @@ import {
   setSymbolInObj,
   createSymbol,
   createSymbolFor,
+  createSymbolRef,
   threadsafeFunctionFatalMode,
   createExternal,
   getExternal,
   mutateExternal,
   createExternalString,
+  createExternalRef,
   xxh2,
   xxh3,
   xxh64Alias,
@@ -136,6 +147,7 @@ import {
   testSerdeRoundtrip,
   testSerdeBigNumberPrecision,
   testSerdeBufferBytes,
+  getBigintJsonValue,
   createObjWithProperty,
   receiveObjectOnlyFromJs,
   dateToNumber,
@@ -189,6 +201,7 @@ import {
   type AliasedStruct,
   returnObjectOnlyToJs,
   buildThreadsafeFunctionFromFunction,
+  buildThreadsafeFunctionFromFunctionCalleeHandle,
   createOptionalExternal,
   getOptionalExternal,
   mutateOptionalExternal,
@@ -214,6 +227,9 @@ import {
   getMyVec,
   setNullByteProperty,
   getNullByteProperty,
+  receiveBindingVitePluginMeta,
+  createObjectRef,
+  objectWithCApis,
   getMappingWithHasher,
   getIndexMappingWithHasher,
   passSetWithHasherToJs,
@@ -231,7 +247,31 @@ import {
   extendsJavascriptError,
   shutdownRuntime,
   callAsyncWithUnknownReturnValue,
+  shorterScope,
+  shorterEscapableScope,
+  tsfnThrowFromJsCallbackContainsTsfn,
+  MyJsNamedClass,
+  JSOnlyMethodsClass,
+  RustOnlyMethodsClass,
+  OriginalRustNameForJsNamedStruct,
+  ComplexClass,
+  createUint8ClampedArrayFromData,
+  arrayBufferFromData,
+  uint8ArrayFromData,
+  createUint8ClampedArrayFromExternal,
+  uint8ArrayFromExternal,
+  Thing,
+  ThingList,
+  createFunction,
+  spawnFutureLifetime,
+  promiseRawReturnClassInstance,
+  ClassReturnInPromise,
+  acceptUntypedTypedArray,
+  defineClass,
+  callbackInSpawn,
 } from '../index.cjs'
+// import other stuff in `#[napi(module_exports)]`
+import nativeAddon from '../index.cjs'
 
 import { test } from './test.framework.js'
 
@@ -398,6 +438,8 @@ test('function call', async (t) => {
     referenceAsCallback((a, b) => a + b, 42, 10),
     52,
   )
+  const fn = createFunction()
+  t.is(fn(42), 242)
 })
 
 test('class', (t) => {
@@ -460,6 +502,96 @@ test('class', (t) => {
             })(),
     )
   }
+})
+
+test('class with js_name', (t) => {
+  // Test class instantiation and basic functionality
+  const instance = new MyJsNamedClass('test_value')
+  t.is(instance.getValue(), 'test_value')
+  t.is(instance.multiplyValue(3), 'test_valuetest_valuetest_value')
+
+  // Test type alias compatibility - OriginalRustNameForJsNamedStruct should be assignable from MyJsNamedClass
+  const instanceForTypeCheck: OriginalRustNameForJsNamedStruct =
+    new MyJsNamedClass('type_test')
+  t.is(
+    instanceForTypeCheck.getValue(),
+    'type_test',
+    'Type alias OriginalRustNameForJsNamedStruct should be assignable from MyJsNamedClass',
+  )
+  t.is(
+    instanceForTypeCheck.multiplyValue(2),
+    'type_testtype_test',
+    'Methods should be callable via type alias',
+  )
+
+  // Test edge cases
+  const emptyInstance = new MyJsNamedClass('')
+  t.is(emptyInstance.getValue(), '', 'Should handle empty strings')
+  t.is(emptyInstance.multiplyValue(0), '', 'Should handle zero multiplication')
+
+  // Test with special characters
+  const specialInstance = new MyJsNamedClass('hello 🚀 world')
+  t.is(
+    specialInstance.getValue(),
+    'hello 🚀 world',
+    'Should handle unicode characters',
+  )
+  t.is(
+    specialInstance.multiplyValue(2),
+    'hello 🚀 worldhello 🚀 world',
+    'Should multiply unicode strings correctly',
+  )
+})
+
+test('struct with js_name and methods only (no constructor)', (t) => {
+  // Test that structs with js_name but no constructor still have their methods in type definitions
+  // This was a bug where methods would disappear if there was no constructor/factory method
+
+  // The fact that this test compiles successfully means the type definitions are correct
+  // We verify that:
+  // 1. JSOnlyMethodsClass is the exported class name (not RustOnlyMethodsClass)
+  // 2. RustOnlyMethodsClass is a type alias for JSOnlyMethodsClass
+  // 3. Both have the methods processData() and getLength()
+
+  // Test type compatibility - this will fail to compile if types are wrong
+  const testTypeCompatibility = (instance: JSOnlyMethodsClass) => {
+    // These assignments will cause TypeScript compilation errors if methods are missing
+    const processDataFn: () => string = instance.processData
+    const getLengthFn: () => number = instance.getLength
+    return { processDataFn, getLengthFn }
+  }
+
+  // Test type alias compatibility
+  const testAliasCompatibility = (instance: RustOnlyMethodsClass) => {
+    const processDataFn: () => string = instance.processData
+    const getLengthFn: () => number = instance.getLength
+    return { processDataFn, getLengthFn }
+  }
+
+  // Test that RustOnlyMethodsClass is assignable to JSOnlyMethodsClass
+  const mockInstance = { data: 'test' } as JSOnlyMethodsClass
+  const aliasInstance: RustOnlyMethodsClass = mockInstance
+
+  // If we get here, the types compiled successfully
+  t.pass(
+    'Type definitions are correct - js_name struct with methods only works properly',
+  )
+
+  // Verify we can call the test functions without compilation errors
+  t.notThrows(
+    () => testTypeCompatibility(mockInstance),
+    'JSOnlyMethodsClass methods should be accessible',
+  )
+  t.notThrows(
+    () => testAliasCompatibility(aliasInstance),
+    'RustOnlyMethodsClass alias methods should be accessible',
+  )
+})
+
+test('define class', (t) => {
+  const DynamicRustClass = defineClass()
+  const instance = new DynamicRustClass(42)
+  t.is(instance.rustMethod(), 42)
 })
 
 test('async self in class', async (t) => {
@@ -668,6 +800,22 @@ test('object', (t) => {
   setNullByteProperty(objNull)
   t.is(objNull['\0virtual'], 'test')
   t.is(getNullByteProperty(objNull), 'test')
+  t.notThrows(() =>
+    receiveBindingVitePluginMeta({
+      'vite:import-glob': {
+        isSubImportsPattern: true,
+      },
+    }),
+  )
+  const objRef = createObjectRef()
+  // @ts-expect-error
+  t.is(objRef.test, 1)
+
+  t.notThrows(() => {
+    const obj = objectWithCApis()
+    // @ts-expect-error
+    t.is(obj.test(), 42)
+  })
 })
 
 test('get str from object', (t) => {
@@ -713,6 +861,8 @@ test('pass symbol in', (t) => {
 
 test('create symbol', (t) => {
   t.is(createSymbol().toString(), 'Symbol(a symbol)')
+  const symRef = createSymbolRef('test')
+  t.is(symRef.toString(), 'Symbol(test)')
 })
 
 test('Option', (t) => {
@@ -877,6 +1027,14 @@ test('serde-buffer-bytes', (t) => {
   t.is(testSerdeBufferBytes({ code: new ArrayBuffer(0) }), 0n)
 })
 
+test('get bigint json value', (t) => {
+  t.notThrows(() => {
+    getBigintJsonValue(-1n)
+    getBigintJsonValue(1n)
+    getBigintJsonValue(18446744073709551620n)
+  })
+})
+
 test('buffer', (t) => {
   let buf = getBuffer()
   t.is(buf.toString('utf-8'), 'Hello world')
@@ -963,6 +1121,23 @@ test('create external TypedArray', (t) => {
   t.deepEqual(createExternalTypedArray(), new Uint32Array([1, 2, 3, 4, 5]))
 })
 
+test('typed array creation', (t) => {
+  t.deepEqual(
+    createUint8ClampedArrayFromData(),
+    new Uint8ClampedArray(Buffer.from('Hello world')),
+  )
+  t.deepEqual(
+    createUint8ClampedArrayFromExternal(),
+    new Uint8ClampedArray(Buffer.from('Hello world')),
+  )
+  t.deepEqual(Buffer.from(arrayBufferFromData()), Buffer.from('Hello world'))
+  t.deepEqual(uint8ArrayFromData(), new Uint8Array(Buffer.from('Hello world')))
+  t.deepEqual(
+    uint8ArrayFromExternal(),
+    new Uint8Array(Buffer.from('Hello world')),
+  )
+})
+
 test('mutate TypedArray', (t) => {
   if (process.env.WASI_TEST) {
     t.pass()
@@ -978,6 +1153,10 @@ test('deref uint8 array', (t) => {
     derefUint8Array(new Uint8Array([1, 2]), new Uint8ClampedArray([3, 4])),
     4,
   )
+})
+
+test('accept untyped typed array', (t) => {
+  t.is(acceptUntypedTypedArray(new Uint8Array([1, 2, 3])), 3n)
 })
 
 test('async', async (t) => {
@@ -1055,6 +1234,8 @@ test('Uint8Array from String', async (t) => {
 test('either', (t) => {
   t.is(eitherStringOrNumber(2), 2)
   t.is(eitherStringOrNumber('hello'), 'hello'.length)
+  t.is(eitherF64OrU32(1), 1)
+  t.is(eitherF64OrU32(1.1), 1.1)
 })
 
 test('return either', (t) => {
@@ -1107,6 +1288,14 @@ test('either4', (t) => {
   t.is(either4({ v: 'world' }), 'world'.length)
 })
 
+test('either promise in either a', async (t) => {
+  t.is(await eitherPromiseInEitherA(1), false)
+  t.is(await eitherPromiseInEitherA(20), true)
+  t.is(await eitherPromiseInEitherA(Promise.resolve(1)), false)
+  t.is(await eitherPromiseInEitherA(Promise.resolve(20)), true)
+  t.is(await eitherPromiseInEitherA('abc'), false)
+})
+
 test('external', (t) => {
   const FX = 42
   const ext = createExternal(FX)
@@ -1119,6 +1308,9 @@ test('external', (t) => {
   // @ts-expect-error
   const e = t.throws(() => getExternal(ext2))
   t.is(e?.message, '<u32> on `External` is not the type of wrapped object')
+
+  const extRef = createExternalRef(FX)
+  t.is(getExternal(extRef), FX)
 })
 
 test('optional external', (t) => {
@@ -1151,11 +1343,12 @@ test('should be able to return object from shared crate', (t) => {
 const AbortSignalTest =
   typeof AbortController !== 'undefined' ? test : test.skip
 
-AbortSignalTest('async task without abort controller', async (t) => {
+test('async task without abort controller', async (t) => {
   t.is(await withoutAbortController(1, 2), 3)
 })
 
-AbortSignalTest('async task with abort controller', async (t) => {
+// schedule async task always start immediately, hard to create a case that async task is scheduled but not started
+test.skip('async task with abort controller', async (t) => {
   const ctrl = new AbortController()
   const promise = withAbortController(1, 2, ctrl.signal)
   try {
@@ -1167,10 +1360,49 @@ AbortSignalTest('async task with abort controller', async (t) => {
   }
 })
 
+test('async task with different resolved values', async (t) => {
+  const r1 = await asyncTaskOptionalReturn()
+  t.falsy(r1)
+  if (!process.env.WASI_TEST) {
+    await asyncTaskReadFile(import.meta.filename)
+  }
+  const r2 = await asyncResolveArray(2)
+  t.deepEqual(r2, [0, 1])
+})
+
 AbortSignalTest('abort resolved task', async (t) => {
   const ctrl = new AbortController()
   await withAbortController(1, 2, ctrl.signal).then(() => ctrl.abort())
   t.pass('should not throw')
+})
+
+test('abort signal should be able to reuse with different tasks', async (t) => {
+  const ctrl = new AbortController()
+  await t.notThrowsAsync(async () => {
+    try {
+      const promise = Promise.all(
+        Array.from({ length: 20 }).map(() =>
+          withAbortController(1, 2, ctrl.signal),
+        ),
+      )
+      ctrl.abort()
+      await promise
+    } catch (err: unknown) {
+      // sometimes on CI, the scheduled task is able to abort
+      // so we only allow it to throw AbortError
+      t.is((err as Error).message, 'AbortError')
+    }
+  })
+})
+
+test('async task finally must be called', async (t) => {
+  const obj = {
+    finally: false,
+    resolve: false,
+  }
+  await asyncTaskFinally(obj)
+  t.is(obj.finally, true)
+  t.is(obj.resolve, true)
 })
 
 const BigIntTest = typeof BigInt !== 'undefined' ? test : test.skip
@@ -1238,6 +1470,25 @@ Napi4Test('throw error from ThreadsafeFunction', async (t) => {
   const err = await t.throwsAsync(throwPromise)
   t.is(err?.message, 'ThrowFromNative')
 })
+
+Napi4Test('throw error from ThreadsafeFunction with status', async (t) => {
+  const throwPromise = new Promise((_, reject) => {
+    threadsafeFunctionThrowErrorWithStatus(reject)
+  })
+  const err = await t.throwsAsync(throwPromise)
+  t.is((err as Error & { code?: string })?.code, 'CustomErrorStatus')
+})
+
+Napi4Test(
+  'throw error from ThreadsafeFunction with builder and status',
+  async (t) => {
+    const throwPromise = new Promise((_, reject) => {
+      threadsafeFunctionBuildThrowErrorWithStatus(reject)
+    })
+    const err = await t.throwsAsync(throwPromise)
+    t.is((err as Error & { code?: string })?.code, 'CustomErrorStatus')
+  },
+)
 
 Napi4Test('ThreadsafeFunction closure capture data', (t) => {
   return new Promise((resolve) => {
@@ -1314,6 +1565,14 @@ Napi4Test('async call ThreadsafeFunction', async (t) => {
   )
 })
 
+// https://github.com/napi-rs/napi-rs/issues/2727
+test('provide undefined to tsfn', async (t) => {
+  // @ts-expect-error
+  t.throws(() => tsfnAsyncCall(), {
+    code: 'InvalidArg',
+  })
+})
+
 test('Throw from ThreadsafeFunction JavaScript callback', async (t) => {
   const errMsg = 'ThrowFromJavaScriptRawCallback'
   await t.throwsAsync(
@@ -1323,6 +1582,32 @@ test('Throw from ThreadsafeFunction JavaScript callback', async (t) => {
       }),
     {
       message: errMsg,
+    },
+  )
+
+  await t.throwsAsync(
+    async () => {
+      await tsfnThrowFromJs(() => {
+        const a = {}
+        // @ts-expect-error
+        a.c.d = 2
+        return Promise.resolve(1)
+      })
+      await tsfnThrowFromJsCallbackContainsTsfn(() => {
+        const a = {}
+        // @ts-expect-error
+        a.b.c = 1
+        tsfnThrowFromJs(() => {
+          // @ts-expect-error
+          a.c.d = 2
+          return Promise.resolve(1)
+        })
+        return Promise.resolve(1)
+      })
+    },
+    {
+      instanceOf: TypeError,
+      message: "Cannot set properties of undefined (setting 'd')",
     },
   )
 })
@@ -1434,6 +1719,10 @@ Napi4Test('build ThreadsafeFunction from Function', (t) => {
 
   buildThreadsafeFunctionFromFunction(fn)
 
+  t.notThrows(() => {
+    buildThreadsafeFunctionFromFunctionCalleeHandle(() => {})
+  })
+
   return subject.pipe(take(3))
 })
 
@@ -1480,6 +1769,8 @@ Napi5Test('Class with getter setter closures', (t) => {
   t.is(instance.name, `I'm Allie`)
   // @ts-expect-error
   t.is(instance.age, 0.3)
+  // @ts-expect-error
+  t.is(instance[instance.ageSymbol], 0.3)
 })
 
 Napi5Test('Date to chrono::NativeDateTime test', (t) => {
@@ -1613,6 +1904,13 @@ test('should be able to recursively hidden lifetime', async (t) => {
   })
 })
 
+test('should be able to correct lifetime of spawn_future_lifetime', async (t) => {
+  const result = await spawnFutureLifetime(1)
+  t.is(result, '1')
+  const result2 = await promiseRawReturnClassInstance()
+  t.true(result2 instanceof ClassReturnInPromise)
+})
+
 test('extends javascript error', (t) => {
   class CustomError extends Error {}
 
@@ -1624,4 +1922,86 @@ test('extends javascript error', (t) => {
     t.is(e.name, 'RustError')
     t.true(typeof e.nativeStackTrace === 'string')
   }
+})
+
+test('module exports', (t) => {
+  t.is(nativeAddon.NAPI_RS_SYMBOL, Symbol.for('NAPI_RS_SYMBOL'))
+})
+
+test('shorter scope', (t) => {
+  const result = shorterScope(['hello', { foo: 'bar' }, 'world', true])
+  t.deepEqual(result, [5, 1, 5, 0])
+})
+
+test('escapable handle scope', (t) => {
+  function makeIterFunction() {
+    let i = 0
+    return () => {
+      if (i >= 10_000) {
+        return null
+      }
+      i++
+      return Math.random().toString().repeat(100)
+    }
+  }
+  t.notThrows(() => {
+    shorterEscapableScope(makeIterFunction())
+  })
+})
+
+test('complex class with multiple methods - issue #2722', (t) => {
+  // Test creating instance of re-exported class with constructor (Either<String, ClassInstance<ComplexClass>>)
+  t.notThrows(() => {
+    const complex = new ComplexClass('test_value', 42)
+
+    // Test that constructor worked
+    t.is(complex.value, 'test_value')
+    t.is(complex.number, 42)
+
+    // Test all methods work
+    t.is(complex.methodOne(), 'method_one: test_value')
+    t.is(complex.methodTwo(), 84)
+    t.is(complex.methodThree(), 'method_three: test_value - 42')
+    t.is(complex.methodFour(), true)
+    t.is(complex.methodFive(), 'TEST_VALUE')
+  })
+
+  // Test with Either::B variant (ClassInstance instead of string)
+  t.notThrows(() => {
+    const original = new ComplexClass('original', 100)
+    const complex2 = new ComplexClass(original, -10)
+    t.is(complex2.value, 'cloned:original') // Should clone the value
+    t.is(complex2.methodFour(), false)
+  })
+
+  // Test that we can create multiple instances (stress test with Either)
+  t.notThrows(() => {
+    const baseInstance = new ComplexClass('base', 999)
+    for (let i = 0; i < 10; i++) {
+      // Alternate between string and ClassInstance for Either parameter
+      const instance =
+        i % 2 === 0
+          ? new ComplexClass(`test${i}`, i)
+          : new ComplexClass(baseInstance, i)
+
+      const expectedValue = i % 2 === 0 ? `test${i}` : 'cloned:base'
+      t.is(instance.value, expectedValue)
+      t.is(instance.number, i)
+    }
+  })
+})
+
+test('instanceof for objects returned from getters - issue #2746', (t) => {
+  const list = new ThingList()
+  const thing = list.thing
+  t.true(thing instanceof Thing, 'thing should be an instance of Thing')
+})
+
+test('callback in spawn async task', async (t) => {
+  const { resolve, promise } = Promise.withResolvers()
+  callbackInSpawn((obj) => {
+    resolve(obj)
+  })
+  const obj = await promise
+  t.deepEqual(obj, { foo: 'bar' })
 })

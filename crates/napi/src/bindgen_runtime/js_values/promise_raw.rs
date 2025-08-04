@@ -5,10 +5,13 @@ use std::ptr;
 #[cfg(all(feature = "napi4", feature = "tokio_rt"))]
 use crate::bindgen_runtime::Promise;
 use crate::{
-  bindgen_prelude::{FromNapiValue, Result, ToNapiValue, TypeName, ValidateNapiValue},
-  check_status, sys, Env, Error, JsObjectValue, JsValue, Value, ValueType,
+  bindgen_prelude::{
+    FromNapiValue, JsObjectValue, Result, ToNapiValue, TypeName, ValidateNapiValue,
+  },
+  check_status, sys, Env, Error, JsValue, Value, ValueType,
 };
 
+#[derive(Clone, Copy)]
 pub struct PromiseRaw<'env, T> {
   pub(crate) inner: sys::napi_value,
   env: sys::napi_env,
@@ -27,7 +30,7 @@ impl<'env, T> JsValue<'env> for PromiseRaw<'env, T> {
 
 impl<'env, T> JsObjectValue<'env> for PromiseRaw<'env, T> {}
 
-impl<T: FromNapiValue> TypeName for PromiseRaw<'_, T> {
+impl<T> TypeName for PromiseRaw<'_, T> {
   fn type_name() -> &'static str {
     "Promise"
   }
@@ -37,7 +40,7 @@ impl<T: FromNapiValue> TypeName for PromiseRaw<'_, T> {
   }
 }
 
-impl<T: FromNapiValue> ValidateNapiValue for PromiseRaw<'_, T> {
+impl<T> ValidateNapiValue for PromiseRaw<'_, T> {
   unsafe fn validate(
     env: napi_sys::napi_env,
     napi_val: napi_sys::napi_value,
@@ -46,7 +49,7 @@ impl<T: FromNapiValue> ValidateNapiValue for PromiseRaw<'_, T> {
   }
 }
 
-impl<T: FromNapiValue> FromNapiValue for PromiseRaw<'_, T> {
+impl<T> FromNapiValue for PromiseRaw<'_, T> {
   unsafe fn from_napi_value(env: napi_sys::napi_env, value: napi_sys::napi_value) -> Result<Self> {
     Ok(PromiseRaw::new(env, value))
   }
@@ -64,10 +67,10 @@ impl<T> PromiseRaw<'_, T> {
 
 impl<'env, T: FromNapiValue> PromiseRaw<'env, T> {
   /// Promise.then method
-  pub fn then<Callback, U>(&self, cb: Callback) -> Result<PromiseRaw<'env, U>>
+  pub fn then<'then, Callback, U>(&self, cb: Callback) -> Result<PromiseRaw<'env, U>>
   where
     U: ToNapiValue,
-    Callback: 'static + FnOnce(CallbackContext<T>) -> Result<U>,
+    Callback: 'then + FnOnce(CallbackContext<T>) -> Result<U>,
   {
     let mut then_fn = ptr::null_mut();
     const THEN: &[u8; 5] = b"then\0";
@@ -129,11 +132,11 @@ impl<'env, T: FromNapiValue> PromiseRaw<'env, T> {
   }
 
   /// Promise.catch method
-  pub fn catch<E, U, Callback>(&self, cb: Callback) -> Result<PromiseRaw<'env, U>>
+  pub fn catch<'catch, E, U, Callback>(&self, cb: Callback) -> Result<PromiseRaw<'env, U>>
   where
     E: FromNapiValue,
     U: ToNapiValue,
-    Callback: 'static + FnOnce(CallbackContext<E>) -> Result<U>,
+    Callback: 'catch + FnOnce(CallbackContext<E>) -> Result<U>,
   {
     let mut catch_fn = ptr::null_mut();
     const CATCH: &[u8; 6] = b"catch\0";
@@ -195,10 +198,10 @@ impl<'env, T: FromNapiValue> PromiseRaw<'env, T> {
   }
 
   /// Promise.finally method
-  pub fn finally<U, Callback>(&mut self, cb: Callback) -> Result<PromiseRaw<'env, T>>
+  pub fn finally<'finally, U, Callback>(&mut self, cb: Callback) -> Result<PromiseRaw<'env, T>>
   where
     U: ToNapiValue,
-    Callback: 'static + FnOnce(Env) -> Result<U>,
+    Callback: 'finally + FnOnce(Env) -> Result<U>,
   {
     let mut then_fn = ptr::null_mut();
     const FINALLY: &[u8; 8] = b"finally\0";

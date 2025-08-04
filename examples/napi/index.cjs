@@ -68,7 +68,7 @@ function requireNative() {
     try {
       nativeBinding = require(process.env.NAPI_RS_NATIVE_LIBRARY_PATH);
     } catch (err) {
-      loadErrors.push(err);
+      loadErrors.push(err)
     }
   } else if (process.platform === 'android') {
     if (process.arch === 'arm64') {
@@ -82,7 +82,6 @@ function requireNative() {
       } catch (e) {
         loadErrors.push(e)
       }
-
     } else if (process.arch === 'arm') {
       try {
         return require('./example.android-arm-eabi.node')
@@ -94,7 +93,6 @@ function requireNative() {
       } catch (e) {
         loadErrors.push(e)
       }
-
     } else {
       loadErrors.push(new Error(`Unsupported architecture on Android ${process.arch}`))
     }
@@ -110,7 +108,6 @@ function requireNative() {
       } catch (e) {
         loadErrors.push(e)
       }
-
     } else if (process.arch === 'ia32') {
       try {
         return require('./example.win32-ia32-msvc.node')
@@ -122,7 +119,6 @@ function requireNative() {
       } catch (e) {
         loadErrors.push(e)
       }
-
     } else if (process.arch === 'arm64') {
       try {
         return require('./example.win32-arm64-msvc.node')
@@ -134,22 +130,20 @@ function requireNative() {
       } catch (e) {
         loadErrors.push(e)
       }
-
     } else {
       loadErrors.push(new Error(`Unsupported architecture on Windows: ${process.arch}`))
     }
   } else if (process.platform === 'darwin') {
     try {
-        return require('./example.darwin-universal.node')
-      } catch (e) {
-        loadErrors.push(e)
-      }
-      try {
-        return require('@examples/napi-darwin-universal')
-      } catch (e) {
-        loadErrors.push(e)
-      }
-
+      return require('./example.darwin-universal.node')
+    } catch (e) {
+      loadErrors.push(e)
+    }
+    try {
+      return require('@examples/napi-darwin-universal')
+    } catch (e) {
+      loadErrors.push(e)
+    }
     if (process.arch === 'x64') {
       try {
         return require('./example.darwin-x64.node')
@@ -161,7 +155,6 @@ function requireNative() {
       } catch (e) {
         loadErrors.push(e)
       }
-
     } else if (process.arch === 'arm64') {
       try {
         return require('./example.darwin-arm64.node')
@@ -173,7 +166,6 @@ function requireNative() {
       } catch (e) {
         loadErrors.push(e)
       }
-
     } else {
       loadErrors.push(new Error(`Unsupported architecture on macOS: ${process.arch}`))
     }
@@ -189,7 +181,6 @@ function requireNative() {
       } catch (e) {
         loadErrors.push(e)
       }
-
     } else if (process.arch === 'arm64') {
       try {
         return require('./example.freebsd-arm64.node')
@@ -201,7 +192,6 @@ function requireNative() {
       } catch (e) {
         loadErrors.push(e)
       }
-
     } else {
       loadErrors.push(new Error(`Unsupported architecture on FreeBSD: ${process.arch}`))
     }
@@ -209,106 +199,98 @@ function requireNative() {
     if (process.arch === 'x64') {
       if (isMusl()) {
         try {
-        return require('./example.linux-x64-musl.node')
-      } catch (e) {
-        loadErrors.push(e)
-      }
-      try {
-        return require('@examples/napi-linux-x64-musl')
-      } catch (e) {
-        loadErrors.push(e)
-      }
-
+          return require('./example.linux-x64-musl.node')
+        } catch (e) {
+          loadErrors.push(e)
+        }
+        try {
+          return require('@examples/napi-linux-x64-musl')
+        } catch (e) {
+          loadErrors.push(e)
+        }
       } else {
         try {
-        return require('./example.linux-x64-gnu.node')
-      } catch (e) {
-        loadErrors.push(e)
-      }
-      try {
-        return require('@examples/napi-linux-x64-gnu')
-      } catch (e) {
-        loadErrors.push(e)
-      }
-
+          return require('./example.linux-x64-gnu.node')
+        } catch (e) {
+          loadErrors.push(e)
+        }
+        try {
+          return require('@examples/napi-linux-x64-gnu')
+        } catch (e) {
+          loadErrors.push(e)
+        }
       }
     } else if (process.arch === 'arm64') {
       if (isMusl()) {
         try {
-        return require('./example.linux-arm64-musl.node')
-      } catch (e) {
-        loadErrors.push(e)
-      }
-      try {
-        return require('@examples/napi-linux-arm64-musl')
-      } catch (e) {
-        loadErrors.push(e)
-      }
-
+          return require('./example.linux-arm64-musl.node')
+        } catch (e) {
+          loadErrors.push(e)
+        }
+        try {
+          return require('@examples/napi-linux-arm64-musl')
+        } catch (e) {
+          loadErrors.push(e)
+        }
       } else {
         try {
-        return require('./example.linux-arm64-gnu.node')
-      } catch (e) {
-        loadErrors.push(e)
-      }
-      try {
-        return require('@examples/napi-linux-arm64-gnu')
-      } catch (e) {
-        loadErrors.push(e)
-      }
-
+          return require('./example.linux-arm64-gnu.node')
+        } catch (e) {
+          loadErrors.push(e)
+        }
+        try {
+          return require('@examples/napi-linux-arm64-gnu')
+        } catch (e) {
+          loadErrors.push(e)
+        }
       }
     } else if (process.arch === 'arm') {
       if (isMusl()) {
         try {
-        return require('./example.linux-arm-musleabihf.node')
-      } catch (e) {
-        loadErrors.push(e)
-      }
-      try {
-        return require('@examples/napi-linux-arm-musleabihf')
-      } catch (e) {
-        loadErrors.push(e)
-      }
-
+          return require('./example.linux-arm-musleabihf.node')
+        } catch (e) {
+          loadErrors.push(e)
+        }
+        try {
+          return require('@examples/napi-linux-arm-musleabihf')
+        } catch (e) {
+          loadErrors.push(e)
+        }
       } else {
         try {
-        return require('./example.linux-arm-gnueabihf.node')
-      } catch (e) {
-        loadErrors.push(e)
-      }
-      try {
-        return require('@examples/napi-linux-arm-gnueabihf')
-      } catch (e) {
-        loadErrors.push(e)
-      }
-
+          return require('./example.linux-arm-gnueabihf.node')
+        } catch (e) {
+          loadErrors.push(e)
+        }
+        try {
+          return require('@examples/napi-linux-arm-gnueabihf')
+        } catch (e) {
+          loadErrors.push(e)
+        }
       }
     } else if (process.arch === 'riscv64') {
       if (isMusl()) {
         try {
-        return require('./example.linux-riscv64-musl.node')
-      } catch (e) {
-        loadErrors.push(e)
-      }
-      try {
-        return require('@examples/napi-linux-riscv64-musl')
-      } catch (e) {
-        loadErrors.push(e)
-      }
-
+          return require('./example.linux-riscv64-musl.node')
+        } catch (e) {
+          loadErrors.push(e)
+        }
+        try {
+          return require('@examples/napi-linux-riscv64-musl')
+        } catch (e) {
+          loadErrors.push(e)
+        }
       } else {
         try {
-        return require('./example.linux-riscv64-gnu.node')
-      } catch (e) {
-        loadErrors.push(e)
-      }
-      try {
-        return require('@examples/napi-linux-riscv64-gnu')
-      } catch (e) {
-        loadErrors.push(e)
-      }
-
+          return require('./example.linux-riscv64-gnu.node')
+        } catch (e) {
+          loadErrors.push(e)
+        }
+        try {
+          return require('@examples/napi-linux-riscv64-gnu')
+        } catch (e) {
+          loadErrors.push(e)
+        }
       }
     } else if (process.arch === 'ppc64') {
       try {
@@ -321,7 +303,6 @@ function requireNative() {
       } catch (e) {
         loadErrors.push(e)
       }
-
     } else if (process.arch === 's390x') {
       try {
         return require('./example.linux-s390x-gnu.node')
@@ -333,9 +314,45 @@ function requireNative() {
       } catch (e) {
         loadErrors.push(e)
       }
-
     } else {
       loadErrors.push(new Error(`Unsupported architecture on Linux: ${process.arch}`))
+    }
+  } else if (process.platform === 'openharmony') {
+    if (process.arch === 'arm64') {
+      try {
+        return require('./example.linux-arm64-ohos.node')
+      } catch (e) {
+        loadErrors.push(e)
+      }
+      try {
+        return require('@examples/napi-linux-arm64-ohos')
+      } catch (e) {
+        loadErrors.push(e)
+      }
+    } else if (process.arch === 'x64') {
+      try {
+        return require('./example.linux-x64-ohos.node')
+      } catch (e) {
+        loadErrors.push(e)
+      }
+      try {
+        return require('@examples/napi-linux-x64-ohos')
+      } catch (e) {
+        loadErrors.push(e)
+      }
+    } else if (process.arch === 'arm') {
+      try {
+        return require('./example.linux-arm-ohos.node')
+      } catch (e) {
+        loadErrors.push(e)
+      }
+      try {
+        return require('@examples/napi-linux-arm-ohos')
+      } catch (e) {
+        loadErrors.push(e)
+      }
+    } else {
+      loadErrors.push(new Error(`Unsupported architecture on OpenHarmony: ${process.arch}`))
     }
   } else {
     loadErrors.push(new Error(`Unsupported OS: ${process.platform}, architecture: ${process.arch}`))
@@ -365,15 +382,17 @@ if (!nativeBinding || process.env.NAPI_RS_FORCE_WASI) {
 
 if (!nativeBinding) {
   if (loadErrors.length > 0) {
-    // TODO Link to documentation with potential fixes
-    //  - The package owner could build/publish bindings for this arch
-    //  - The user may need to bundle the correct files
-    //  - The user may need to re-install node_modules to get new packages
-    throw new Error('Failed to load native binding', { cause: loadErrors })
+    throw new Error(
+      `Cannot find native binding. ` +
+        `npm has a bug related to optional dependencies (https://github.com/npm/cli/issues/4828). ` +
+        'Please try `npm i` again after removing both package-lock.json and node_modules directory.',
+      { cause: loadErrors }
+    )
   }
   throw new Error(`Failed to load native binding`)
 }
 
+module.exports = nativeBinding
 module.exports.Animal = nativeBinding.Animal
 module.exports.AnimalWithDefaultConstructor = nativeBinding.AnimalWithDefaultConstructor
 module.exports.AnotherClassForEither = nativeBinding.AnotherClassForEither
@@ -391,9 +410,11 @@ module.exports.Blake2bKey = nativeBinding.Blake2bKey
 module.exports.CatchOnConstructor = nativeBinding.CatchOnConstructor
 module.exports.CatchOnConstructor2 = nativeBinding.CatchOnConstructor2
 module.exports.ClassInArray = nativeBinding.ClassInArray
+module.exports.ClassReturnInPromise = nativeBinding.ClassReturnInPromise
 module.exports.ClassWithFactory = nativeBinding.ClassWithFactory
 module.exports.ClassWithLifetime = nativeBinding.ClassWithLifetime
 module.exports.Context = nativeBinding.Context
+module.exports.CreateStringClass = nativeBinding.CreateStringClass
 module.exports.CssRuleList = nativeBinding.CssRuleList
 module.exports.CSSRuleList = nativeBinding.CSSRuleList
 module.exports.CssStyleSheet = nativeBinding.CssStyleSheet
@@ -407,8 +428,12 @@ module.exports.Fib2 = nativeBinding.Fib2
 module.exports.Fib3 = nativeBinding.Fib3
 module.exports.GetterSetterWithClosures = nativeBinding.GetterSetterWithClosures
 module.exports.JsClassForEither = nativeBinding.JsClassForEither
+module.exports.JSOnlyMethodsClass = nativeBinding.JSOnlyMethodsClass
+module.exports.RustOnlyMethodsClass = nativeBinding.RustOnlyMethodsClass
 module.exports.JsRemote = nativeBinding.JsRemote
 module.exports.JsRepo = nativeBinding.JsRepo
+module.exports.MyJsNamedClass = nativeBinding.MyJsNamedClass
+module.exports.OriginalRustNameForJsNamedStruct = nativeBinding.OriginalRustNameForJsNamedStruct
 module.exports.NinjaTurtle = nativeBinding.NinjaTurtle
 module.exports.NotUseNullableClass = nativeBinding.NotUseNullableClass
 module.exports.NotWritableClass = nativeBinding.NotWritableClass
@@ -416,6 +441,8 @@ module.exports.Optional = nativeBinding.Optional
 module.exports.PackageJsonReader = nativeBinding.PackageJsonReader
 module.exports.Reader = nativeBinding.Reader
 module.exports.Selector = nativeBinding.Selector
+module.exports.Thing = nativeBinding.Thing
+module.exports.ThingList = nativeBinding.ThingList
 module.exports.UseNullableClass = nativeBinding.UseNullableClass
 module.exports.Width = nativeBinding.Width
 module.exports.acceptArraybuffer = nativeBinding.acceptArraybuffer
@@ -426,17 +453,21 @@ module.exports.acceptThreadsafeFunctionFatal = nativeBinding.acceptThreadsafeFun
 module.exports.acceptThreadsafeFunctionTupleArgs = nativeBinding.acceptThreadsafeFunctionTupleArgs
 module.exports.acceptUint8ClampedSlice = nativeBinding.acceptUint8ClampedSlice
 module.exports.acceptUint8ClampedSliceAndBufferSlice = nativeBinding.acceptUint8ClampedSliceAndBufferSlice
+module.exports.acceptUntypedTypedArray = nativeBinding.acceptUntypedTypedArray
 module.exports.add = nativeBinding.add
 module.exports.ALIAS = nativeBinding.ALIAS
 module.exports.AliasedEnum = nativeBinding.AliasedEnum
 module.exports.appendBuffer = nativeBinding.appendBuffer
 module.exports.apply0 = nativeBinding.apply0
 module.exports.apply1 = nativeBinding.apply1
+module.exports.arrayBufferFromData = nativeBinding.arrayBufferFromData
 module.exports.arrayBufferPassThrough = nativeBinding.arrayBufferPassThrough
 module.exports.asyncBufferToArray = nativeBinding.asyncBufferToArray
 module.exports.asyncMultiTwo = nativeBinding.asyncMultiTwo
 module.exports.asyncPlus100 = nativeBinding.asyncPlus100
 module.exports.asyncReduceBuffer = nativeBinding.asyncReduceBuffer
+module.exports.asyncResolveArray = nativeBinding.asyncResolveArray
+module.exports.asyncTaskFinally = nativeBinding.asyncTaskFinally
 module.exports.asyncTaskOptionalReturn = nativeBinding.asyncTaskOptionalReturn
 module.exports.asyncTaskReadFile = nativeBinding.asyncTaskReadFile
 module.exports.asyncTaskVoidReturn = nativeBinding.asyncTaskVoidReturn
@@ -454,6 +485,7 @@ module.exports.call0 = nativeBinding.call0
 module.exports.call1 = nativeBinding.call1
 module.exports.call2 = nativeBinding.call2
 module.exports.callAsyncWithUnknownReturnValue = nativeBinding.callAsyncWithUnknownReturnValue
+module.exports.callbackInSpawn = nativeBinding.callbackInSpawn
 module.exports.callbackReturnPromise = nativeBinding.callbackReturnPromise
 module.exports.callbackReturnPromiseAndSpawn = nativeBinding.callbackReturnPromiseAndSpawn
 module.exports.callCatchOnPromise = nativeBinding.callCatchOnPromise
@@ -488,9 +520,12 @@ module.exports.createBigIntI64 = nativeBinding.createBigIntI64
 module.exports.createBufferSliceFromCopiedData = nativeBinding.createBufferSliceFromCopiedData
 module.exports.createExternal = nativeBinding.createExternal
 module.exports.createExternalBufferSlice = nativeBinding.createExternalBufferSlice
+module.exports.createExternalRef = nativeBinding.createExternalRef
 module.exports.createExternalString = nativeBinding.createExternalString
 module.exports.createExternalTypedArray = nativeBinding.createExternalTypedArray
+module.exports.createFunction = nativeBinding.createFunction
 module.exports.createObj = nativeBinding.createObj
+module.exports.createObjectRef = nativeBinding.createObjectRef
 module.exports.createObjectWithClassField = nativeBinding.createObjectWithClassField
 module.exports.createObjWithProperty = nativeBinding.createObjWithProperty
 module.exports.createOptionalExternal = nativeBinding.createOptionalExternal
@@ -499,18 +534,24 @@ module.exports.createReadableStreamFromClass = nativeBinding.createReadableStrea
 module.exports.createReferenceOnFunction = nativeBinding.createReferenceOnFunction
 module.exports.createSymbol = nativeBinding.createSymbol
 module.exports.createSymbolFor = nativeBinding.createSymbolFor
+module.exports.createSymbolRef = nativeBinding.createSymbolRef
+module.exports.createUint8ClampedArrayFromData = nativeBinding.createUint8ClampedArrayFromData
+module.exports.createUint8ClampedArrayFromExternal = nativeBinding.createUint8ClampedArrayFromExternal
 module.exports.CustomNumEnum = nativeBinding.CustomNumEnum
 module.exports.customStatusCode = nativeBinding.customStatusCode
 module.exports.CustomStringEnum = nativeBinding.CustomStringEnum
 module.exports.dateToNumber = nativeBinding.dateToNumber
 module.exports.DEFAULT_COST = nativeBinding.DEFAULT_COST
+module.exports.defineClass = nativeBinding.defineClass
 module.exports.derefUint8Array = nativeBinding.derefUint8Array
 module.exports.either3 = nativeBinding.either3
 module.exports.either4 = nativeBinding.either4
 module.exports.eitherBoolOrFunction = nativeBinding.eitherBoolOrFunction
 module.exports.eitherBoolOrTuple = nativeBinding.eitherBoolOrTuple
+module.exports.eitherF64OrU32 = nativeBinding.eitherF64OrU32
 module.exports.eitherFromObjects = nativeBinding.eitherFromObjects
 module.exports.eitherFromOption = nativeBinding.eitherFromOption
+module.exports.eitherPromiseInEitherA = nativeBinding.eitherPromiseInEitherA
 module.exports.eitherStringOrNumber = nativeBinding.eitherStringOrNumber
 module.exports.Empty = nativeBinding.Empty
 module.exports.enumToI32 = nativeBinding.enumToI32
@@ -522,6 +563,7 @@ module.exports.f64ArrayToArray = nativeBinding.f64ArrayToArray
 module.exports.fibonacci = nativeBinding.fibonacci
 module.exports.fnReceivedAliased = nativeBinding.fnReceivedAliased
 module.exports.generateFunctionAndCallIt = nativeBinding.generateFunctionAndCallIt
+module.exports.getBigintJsonValue = nativeBinding.getBigintJsonValue
 module.exports.getBtreeMapping = nativeBinding.getBtreeMapping
 module.exports.getBuffer = nativeBinding.getBuffer
 module.exports.getBufferSlice = nativeBinding.getBufferSlice
@@ -564,6 +606,7 @@ module.exports.mutateExternal = nativeBinding.mutateExternal
 module.exports.mutateOptionalExternal = nativeBinding.mutateOptionalExternal
 module.exports.mutateTypedArray = nativeBinding.mutateTypedArray
 module.exports.objectGetNamedPropertyShouldPerformTypecheck = nativeBinding.objectGetNamedPropertyShouldPerformTypecheck
+module.exports.objectWithCApis = nativeBinding.objectWithCApis
 module.exports.optionEnd = nativeBinding.optionEnd
 module.exports.optionOnly = nativeBinding.optionOnly
 module.exports.optionStart = nativeBinding.optionStart
@@ -578,10 +621,12 @@ module.exports.passSetToRust = nativeBinding.passSetToRust
 module.exports.passSetWithHasherToJs = nativeBinding.passSetWithHasherToJs
 module.exports.plusOne = nativeBinding.plusOne
 module.exports.promiseInEither = nativeBinding.promiseInEither
+module.exports.promiseRawReturnClassInstance = nativeBinding.promiseRawReturnClassInstance
 module.exports.readFile = nativeBinding.readFile
 module.exports.readFileAsync = nativeBinding.readFileAsync
 module.exports.readPackageJson = nativeBinding.readPackageJson
 module.exports.receiveAllOptionalObject = nativeBinding.receiveAllOptionalObject
+module.exports.receiveBindingVitePluginMeta = nativeBinding.receiveBindingVitePluginMeta
 module.exports.receiveBufferSliceWithLifetime = nativeBinding.receiveBufferSliceWithLifetime
 module.exports.receiveClassOrNumber = nativeBinding.receiveClassOrNumber
 module.exports.receiveDifferentClass = nativeBinding.receiveDifferentClass
@@ -604,7 +649,10 @@ module.exports.roundtripStr = nativeBinding.roundtripStr
 module.exports.runScript = nativeBinding.runScript
 module.exports.setNullByteProperty = nativeBinding.setNullByteProperty
 module.exports.setSymbolInObj = nativeBinding.setSymbolInObj
+module.exports.shorterEscapableScope = nativeBinding.shorterEscapableScope
+module.exports.shorterScope = nativeBinding.shorterScope
 module.exports.shutdownRuntime = nativeBinding.shutdownRuntime
+module.exports.spawnFutureLifetime = nativeBinding.spawnFutureLifetime
 module.exports.spawnThreadInThread = nativeBinding.spawnThreadInThread
 module.exports.Status = nativeBinding.Status
 module.exports.StatusInValidate = nativeBinding.StatusInValidate
@@ -613,13 +661,16 @@ module.exports.sumBtreeMapping = nativeBinding.sumBtreeMapping
 module.exports.sumIndexMapping = nativeBinding.sumIndexMapping
 module.exports.sumMapping = nativeBinding.sumMapping
 module.exports.sumNums = nativeBinding.sumNums
+module.exports.testEscapedQuotesInComments = nativeBinding.testEscapedQuotesInComments
 module.exports.testSerdeBigNumberPrecision = nativeBinding.testSerdeBigNumberPrecision
 module.exports.testSerdeBufferBytes = nativeBinding.testSerdeBufferBytes
 module.exports.testSerdeRoundtrip = nativeBinding.testSerdeRoundtrip
+module.exports.threadsafeFunctionBuildThrowErrorWithStatus = nativeBinding.threadsafeFunctionBuildThrowErrorWithStatus
 module.exports.threadsafeFunctionClosureCapture = nativeBinding.threadsafeFunctionClosureCapture
 module.exports.threadsafeFunctionFatalMode = nativeBinding.threadsafeFunctionFatalMode
 module.exports.threadsafeFunctionFatalModeError = nativeBinding.threadsafeFunctionFatalModeError
 module.exports.threadsafeFunctionThrowError = nativeBinding.threadsafeFunctionThrowError
+module.exports.threadsafeFunctionThrowErrorWithStatus = nativeBinding.threadsafeFunctionThrowErrorWithStatus
 module.exports.throwAsyncError = nativeBinding.throwAsyncError
 module.exports.throwError = nativeBinding.throwError
 module.exports.throwSyntaxError = nativeBinding.throwSyntaxError
@@ -630,12 +681,16 @@ module.exports.tsfnInEither = nativeBinding.tsfnInEither
 module.exports.tsfnReturnPromise = nativeBinding.tsfnReturnPromise
 module.exports.tsfnReturnPromiseTimeout = nativeBinding.tsfnReturnPromiseTimeout
 module.exports.tsfnThrowFromJs = nativeBinding.tsfnThrowFromJs
+module.exports.tsfnThrowFromJsCallbackContainsTsfn = nativeBinding.tsfnThrowFromJsCallbackContainsTsfn
+module.exports.tsfnWeak = nativeBinding.tsfnWeak
 module.exports.tsRename = nativeBinding.tsRename
 module.exports.u16ArrayToArray = nativeBinding.u16ArrayToArray
 module.exports.u32ArrayToArray = nativeBinding.u32ArrayToArray
 module.exports.u64ArrayToArray = nativeBinding.u64ArrayToArray
 module.exports.u8ArrayToArray = nativeBinding.u8ArrayToArray
 module.exports.uInit8ArrayFromString = nativeBinding.uInit8ArrayFromString
+module.exports.uint8ArrayFromData = nativeBinding.uint8ArrayFromData
+module.exports.uint8ArrayFromExternal = nativeBinding.uint8ArrayFromExternal
 module.exports.validateArray = nativeBinding.validateArray
 module.exports.validateBigint = nativeBinding.validateBigint
 module.exports.validateBoolean = nativeBinding.validateBoolean
@@ -665,3 +720,4 @@ module.exports.withoutAbortController = nativeBinding.withoutAbortController
 module.exports.xxh64Alias = nativeBinding.xxh64Alias
 module.exports.xxh2 = nativeBinding.xxh2
 module.exports.xxh3 = nativeBinding.xxh3
+module.exports.ComplexClass = nativeBinding.ComplexClass
