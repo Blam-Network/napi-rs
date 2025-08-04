@@ -85,6 +85,7 @@ function exportDeclare(ambient: boolean): string {
 export async function processTypeDef(
   intermediateTypeFile: string,
   constEnum: boolean,
+  camelCase: boolean,
   header?: string,
 ) {
   const exports: string[] = []

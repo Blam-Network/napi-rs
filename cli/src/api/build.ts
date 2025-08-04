@@ -898,6 +898,7 @@ class Builder {
     const { dts, exports } = await processTypeDef(
       this.envs.TYPE_DEF_TMP_PATH,
       this.options.constEnum ?? this.config.constEnum ?? true,
+      this.options.camelCase ?? this.config.camelCase ?? true,
       !this.options.noDtsHeader
         ? (this.options.dtsHeader ??
             (this.config.dtsHeaderFile

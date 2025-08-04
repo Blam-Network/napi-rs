@@ -179,6 +179,11 @@ const BUILD_OPTIONS: CommandSchema = {
       description: 'Whether generate const enum for typescript bindings',
     },
     {
+      name: 'camelCase',
+      type: 'boolean',
+      description: 'Whether to convert bindings to camelCase. Defaults to true.',
+    },
+    {
       name: 'jsBinding',
       type: 'string',
       description:

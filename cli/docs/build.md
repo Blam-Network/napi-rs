@@ -23,7 +23,7 @@ new NapiCli().build({
 ## Options
 
 | Options           | CLI Options           | type     | required | default | description                                                                                                               |
-| ----------------- | --------------------- | -------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------- |
+|-------------------|-----------------------| -------- |----------|---------|---------------------------------------------------------------------------------------------------------------------------|
 |                   | --help,-h             |          |          |         | get help                                                                                                                  |
 | target            | --target,-t           | string   | false    |         | Build for the target triple, bypassed to `cargo build --target`                                                           |
 | cwd               | --cwd                 | string   | false    |         | The working directory of where napi command will be executed in, all other paths options are relative to this path        |
@@ -35,6 +35,7 @@ new NapiCli().build({
 | platform          | --platform            | boolean  | false    |         | Add platform triple to the generated nodejs binding file, eg: `[name].linux-x64-gnu.node`                                 |
 | jsPackageName     | --js-package-name     | string   | false    |         | Package name in generated js binding file. Only works with `--platform` flag                                              |
 | constEnum         | --const-enum          | boolean  | false    |         | Whether generate const enum for typescript bindings                                                                       |
+| camelCase         | --camel-case          | boolean  | false    | true    | Whether to convert bindings to camelCase, defaults to true                                                                |
 | jsBinding         | --js                  | string   | false    |         | Path and filename of generated JS binding file. Only works with `--platform` flag. Relative to `--output-dir`.            |
 | noJsBinding       | --no-js               | boolean  | false    |         | Whether to disable the generation JS binding file. Only works with `--platform` flag.                                     |
 | dts               | --dts                 | string   | false    |         | Path and filename of generated type def file. Relative to `--output-dir`                                                  |

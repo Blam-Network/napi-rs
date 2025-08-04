@@ -43,6 +43,11 @@ export interface UserNapiConfig {
   constEnum?: boolean
 
   /**
+   * Whether to convert bindings to camelCase. Defaults to true.
+   */
+  camelCase?: boolean;
+
+  /**
    * dts header prepend to the generated dts file
    */
   dtsHeader?: string
@@ -143,7 +148,7 @@ export interface CommonPackageJsonFields {
 export type NapiConfig = Required<
   Pick<UserNapiConfig, 'binaryName' | 'packageName' | 'npmClient'>
 > &
-  Pick<UserNapiConfig, 'wasm' | 'dtsHeader' | 'dtsHeaderFile' | 'constEnum'> & {
+  Pick<UserNapiConfig, 'wasm' | 'dtsHeader' | 'dtsHeaderFile' | 'constEnum' | 'camelCase'> & {
     targets: Target[]
     packageJson: CommonPackageJsonFields
   }

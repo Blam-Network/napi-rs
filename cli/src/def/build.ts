@@ -55,6 +55,10 @@ export abstract class BaseBuildCommand extends Command {
     description: 'Whether generate const enum for typescript bindings',
   })
 
+  camelCase?: boolean = Option.Boolean('--camel-case', false, {
+    description: 'Whether to convert bindings to camelCase. Defaults to true.',
+  })
+
   jsBinding?: string = Option.String('--js', {
     description:
       'Path and filename of generated JS binding file. Only works with `--platform` flag. Relative to `--output-dir`.',
@@ -177,6 +181,7 @@ export abstract class BaseBuildCommand extends Command {
       features: this.features,
       allFeatures: this.allFeatures,
       noDefaultFeatures: this.noDefaultFeatures,
+      camelCase: this.camelCase,
     }
   }
 }
@@ -225,6 +230,10 @@ export interface BuildOptions {
    * Whether generate const enum for typescript bindings
    */
   constEnum?: boolean
+  /**
+   * Whether to convert bindings to camelCase. Defaults to true.
+   */
+  camelCase?: boolean
   /**
    * Path and filename of generated JS binding file. Only works with `--platform` flag. Relative to `--output-dir`.
    */
